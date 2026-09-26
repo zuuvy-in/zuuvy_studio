@@ -1,0 +1,15 @@
+{
+  "name": "@zsite/ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The site-building agent: Claude editing a site tree through typed operations.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "@zsite/core": "*",
+    "zod": "^4.6.5"
+  }
+}

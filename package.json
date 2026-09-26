@@ -1,0 +1,35 @@
+{
+  "name": "zuuvy-site",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Zuuvy Sites — an AI-first website platform: landing pages, portfolios and stores, with templates, plugins and data integrations.",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "db:start": "bash scripts/db.sh start",
+    "db:stop": "bash scripts/db.sh stop",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "db:reset": "bash scripts/db.sh reset && npm run db:migrate && npm run db:seed",
+    "dev": "concurrently -k -n studio,site,worker,zuuvy -c blue,green,yellow,magenta \"npm run dev -w @zsite/studio\" \"npm run dev -w @zsite/renderer\" \"npm run worker\" \"npm run mock:zuuvy\"",
+    "worker": "tsx scripts/worker.ts",
+    "mock:zuuvy": "tsx scripts/mock-zuuvy.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w @zsite/studio -w @zsite/renderer",
+    "build": "npm run build -w @zsite/studio -w @zsite/renderer"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/pg": "^8.23.1",
+    "concurrently": "^10.0.5",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.2"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "@zsite/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The site tree: schema, edit operations, diffs and templates. Pure — no I/O.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  }
+}

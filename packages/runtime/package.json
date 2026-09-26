@@ -1,0 +1,17 @@
+{
+  "name": "@zsite/runtime",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Runtime 1: the component library that renders a site tree. Server components, no client JavaScript.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "dependencies": {
+    "@zsite/core": "*"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  }
+}

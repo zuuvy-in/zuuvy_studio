@@ -1,0 +1,14 @@
+{
+  "name": "@zsite/connectors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Integration connectors: what each external system offers and how to talk to it. No database access — the platform package persists.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./zuuvy/mock": "./src/zuuvy/mock-server.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  }
+}

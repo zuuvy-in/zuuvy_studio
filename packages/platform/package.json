@@ -1,0 +1,16 @@
+{
+  "name": "@zsite/platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The server side: tenant-scoped database access, sites and versions, integrations, catalogue, orders, the outbox and webhooks.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zsite/ai": "*",
+    "@zsite/connectors": "*",
+    "@zsite/core": "*",
+    "pg": "^8.23.0"
+  }
+}

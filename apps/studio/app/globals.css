@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-500: #4f46e5;
+  --color-brand-600: #4338ca;
+  --color-brand-700: #3730a3;
+  --color-ink: #0f172a;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background: #f7f7f9;
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Form controls share one look. */
+.field {
+  @apply block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-xs placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20;
+}
+.label {
+  @apply mb-1.5 block text-sm font-medium text-slate-700;
+}
+.help {
+  @apply mt-1 text-xs text-slate-500;
+}

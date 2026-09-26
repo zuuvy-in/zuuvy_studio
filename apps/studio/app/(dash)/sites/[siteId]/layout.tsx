@@ -1,0 +1,39 @@
+import { NotFound, getSite, isUuid, withTenant } from "@zsite/platform";
+import { notFound } from "next/navigation";
+import { Tabs } from "@/components/nav";
+import { Badge, ButtonLink, Icon } from "@/components/ui";
+import { requireSession } from "@/lib/session";
+
+export default async function SiteLayout({ children, params }: { children: React.ReactNode; params: Promise<{ siteId: string }> }) {
+  const { siteId } = await params;
+  const session = await requireSession();
+  if (!isUuid(siteId)) notFound();
+  const site = await withTenant(session.tenant.id, (tx) => getSite(tx, siteId)).catch((e) => {
+    if (e instanceof NotFound) notFound();
+    throw e;
+  });
+  return (
+    <>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm text-slate-500">Sites</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="truncate text-2xl font-semibold tracking-tight">{site.name}</h1>
+            {site.published_number ? <Badge tone="green">Live · v{site.published_number}</Badge> : <Badge>Not published</Badge>}
+            {site.latest_number !== site.published_number && <Badge tone="amber">Latest v{site.latest_number} not live</Badge>}
+          </div>
+        </div>
+        <ButtonLink href={site.url} external variant="secondary">
+          {site.url.replace(/^https?:\/\//, "")} <Icon name="external" />
+        </ButtonLink>
+      </div>
+      <Tabs
+        tabs={[
+          { href: `/sites/${site.id}/versions`, label: "Versions" },
+          { href: `/sites/${site.id}/settings`, label: "Settings" },
+        ]}
+      />
+      {children}
+    </>
+  );
+}
