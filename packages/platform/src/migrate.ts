@@ -9,11 +9,21 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import pg from "pg";
 
-export async function migrate(adminUrl: string, dir: string, log: (s: string) => void = () => {}): Promise<string[]> {
-  const client = new pg.Client({ connectionString: adminUrl });
+/** Any constant: every migrating process takes the same session-level lock. */
+const MIGRATION_LOCK = 72_635_901;
+
+export async function migrate(
+  adminUrl: string,
+  dir: string,
+  log: (s: string) => void = () => {},
+  opts: { ssl?: boolean } = {},
+): Promise<string[]> {
+  const client = new pg.Client({ connectionString: adminUrl, ssl: opts.ssl ? { rejectUnauthorized: true } : undefined });
   await client.connect();
   const applied: string[] = [];
   try {
+    // Two deploys (or a retried one) must not apply the same migration twice.
+    await client.query("select pg_advisory_lock($1)", [MIGRATION_LOCK]);
     await client.query(
       "create table if not exists schema_migrations (name text primary key, applied_at timestamptz not null default now())",
     );
@@ -35,6 +45,7 @@ export async function migrate(adminUrl: string, dir: string, log: (s: string) =>
       log(`applied ${file}`);
     }
   } finally {
+    await client.query("select pg_advisory_unlock($1)", [MIGRATION_LOCK]).catch(() => {});
     await client.end();
   }
   return applied;

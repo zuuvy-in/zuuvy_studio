@@ -37,8 +37,10 @@ function env(name: string, fallback?: string): string {
 export const isProduction = () => process.env.NODE_ENV === "production";
 
 export const config = {
-  databaseUrl: () => env("DATABASE_URL", "postgres://zsite_app:zsite@127.0.0.1:54329/zsite"),
-  databaseAdminUrl: () => env("DATABASE_ADMIN_URL", "postgres://postgres@127.0.0.1:54329/zsite"),
+  databaseUrl: () => env("DATABASE_URL", "") || urlFromParts("app") || "postgres://zsite_app:zsite@127.0.0.1:54329/zsite",
+  databaseAdminUrl: () => env("DATABASE_ADMIN_URL", "") || urlFromParts("admin") || "postgres://postgres@127.0.0.1:54329/zsite",
+  /** TLS to the database, verified against the system CAs plus NODE_EXTRA_CA_CERTS (the RDS bundle in the image). */
+  databaseSsl: () => env("DB_SSL", "0") === "1",
   platformDomain: () => env("PLATFORM_DOMAIN", "zuuvy.site"),
   /** How a site's live URL is written. `{sub}` is the subdomain. */
   siteUrlTemplate: () => env("SITE_URL_TEMPLATE", "https://{sub}.zuuvy.site"),
@@ -50,6 +52,23 @@ export const config = {
   /** Empty = the provider's default model (see @zsite/ai DEFAULT_MODELS). */
   aiModel: () => env("ZSITE_AI_MODEL", ""),
 };
+
+/**
+ * In AWS the connection parts arrive separately — host and port from the
+ * stack, passwords injected from Secrets Manager — so the URL is assembled
+ * here rather than stored anywhere as one secret string.
+ */
+function urlFromParts(who: "app" | "admin"): string {
+  loadRootEnv();
+  const host = process.env.DB_HOST;
+  if (!host) return "";
+  const port = process.env.DB_PORT || "5432";
+  const name = process.env.DB_NAME || "zsite";
+  const user = who === "app" ? process.env.DB_APP_USER || "zsite_app" : process.env.DB_ADMIN_USER || "postgres";
+  const password = who === "app" ? process.env.DB_APP_PASSWORD : process.env.DB_ADMIN_PASSWORD;
+  if (!password) return "";
+  return `postgres://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${name}`;
+}
 
 export function siteUrl(subdomain: string): string {
   return config.siteUrlTemplate().replace("{sub}", subdomain);

@@ -124,7 +124,13 @@ production, the table stays the source of truth.
 
 Zuuvy: see `docs/ZUUVY_CONTRACT.md`.
 
-## AWS deployment (target)
+## AWS deployment
+
+What runs today is in `docs/DEPLOYMENT.md` (CDK in `infra/`, deployed by
+GitHub Actions over OIDC): ALB + Fargate + Aurora Serverless v2 in
+`ap-south-1`. The fuller target below adds CloudFront for custom domains.
+
+### Target
 
 ```
 Route 53 (zuuvy.site, tenant zones, Domains API for registration)

@@ -1,0 +1,137 @@
+# Test every push and pull request; deploy main to AWS.
+#
+# AWS access is by OIDC federation: no AWS keys are stored in GitHub. The
+# deploy job runs in the "production" environment, which is the only thing
+# the AWS role trusts (infra/bootstrap/github-oidc.yaml). Setup: docs/DEPLOYMENT.md.
+name: test and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # One deploy at a time; a newer push waits rather than cancelling a deploy mid-flight.
+  group: ${{ github.event_name == 'pull_request' && format('test-{0}', github.ref) || 'deploy-production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      # The platform tests create a throwaway database per file, connected as the
+      # RLS-bound app role, exactly as locally (npm run db:start uses this port).
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["54329:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx tsc -p tsconfig.json --noEmit
+      - run: npm test
+      - name: Typecheck and build the apps
+        run: |
+          (cd apps/studio && npx next typegen && npx tsc --noEmit)
+          (cd apps/renderer && npx next typegen && npx tsc --noEmit)
+          npm run build
+      - name: Synthesize the infrastructure (no AWS access needed)
+        working-directory: infra
+        env:
+          AWS_ACCOUNT_ID: "123456789012"
+          AWS_REGION: ap-south-1
+          HOSTED_ZONE_ID: ZEXAMPLE
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npx cdk synth --quiet
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: production
+      url: https://studio.${{ vars.PLATFORM_DOMAIN }}
+    permissions:
+      contents: read
+      id-token: write # to request the OIDC token AWS trusts
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      PLATFORM_DOMAIN: ${{ vars.PLATFORM_DOMAIN }}
+      HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID }}
+      ZSITE_AI_MODEL: ${{ vars.ZSITE_AI_MODEL }}
+      DB_MIN_ACU: ${{ vars.DB_MIN_ACU }}
+      APP_VERSION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: zsite-deploy-${{ github.run_id }}
+
+      - name: Install CDK
+        working-directory: infra
+        run: npm ci
+
+      - name: Deploy base (network, database, secrets, migration task)
+        working-directory: infra
+        run: npx cdk deploy ZsiteBase --require-approval never --outputs-file base-outputs.json
+
+      - name: Migrate the database
+        working-directory: infra
+        run: |
+          set -euo pipefail
+          out() { jq -r ".ZsiteBase.$1" base-outputs.json; }
+          CLUSTER=$(out ClusterName)
+          TASK_DEF=$(out MigrateTaskDefinitionArn)
+          SUBNETS=$(out MigrateSubnets)
+          SG=$(out MigrateSecurityGroup)
+          LOGS=$(out MigrateLogGroup)
+          TASK=$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$TASK_DEF" --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=ENABLED}" \
+            --query 'tasks[0].taskArn' --output text)
+          echo "migration task: $TASK"
+          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$TASK"
+          CODE=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK" --query 'tasks[0].containers[0].exitCode' --output text)
+          REASON=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK" --query 'tasks[0].stoppedReason' --output text)
+          echo "--- migration log"
+          aws logs filter-log-events --log-group-name "$LOGS" --log-stream-name-prefix "migrate/migrate/${TASK##*/}" \
+            --query 'events[].message' --output text || true
+          echo "--- exit code $CODE ($REASON)"
+          test "$CODE" = "0"
+
+      - name: Deploy services (load balancer, certificate, DNS, studio, renderer, worker)
+        working-directory: infra
+        run: npx cdk deploy ZsiteServices --require-approval never --outputs-file services-outputs.json
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 20); do
+            BODY=$(curl -fsS "https://studio.${PLATFORM_DOMAIN}/api/health" || true)
+            if echo "$BODY" | grep -q "\"version\":\"${APP_VERSION}\""; then echo "studio serving ${APP_VERSION}"; exit 0; fi
+            sleep 15
+          done
+          echo "studio is not serving ${APP_VERSION} (last answer: ${BODY:-none})"; exit 1

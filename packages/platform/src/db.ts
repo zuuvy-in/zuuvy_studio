@@ -23,7 +23,11 @@ const g = globalThis as unknown as { __zsitePool?: pg.Pool };
 
 export function pool(): pg.Pool {
   if (!g.__zsitePool) {
-    g.__zsitePool = new pg.Pool({ connectionString: config.databaseUrl(), max: 10 });
+    g.__zsitePool = new pg.Pool({
+      connectionString: config.databaseUrl(),
+      max: 10,
+      ssl: config.databaseSsl() ? { rejectUnauthorized: true } : undefined,
+    });
   }
   return g.__zsitePool;
 }

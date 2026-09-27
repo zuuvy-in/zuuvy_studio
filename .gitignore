@@ -6,3 +6,6 @@ node_modules/
 *.tsbuildinfo
 next-env.d.ts
 coverage/
+infra/cdk.out/
+infra/*-outputs.json
+infra/cdk.context.json

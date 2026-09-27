@@ -10,8 +10,12 @@ try {
 
 const config: NextConfig = {
   turbopack: { root: join(import.meta.dirname, "../..") },
+  // A self-contained server for the container image (infra/docker/next.Dockerfile).
+  output: "standalone",
+  outputFileTracingRoot: join(import.meta.dirname, "../.."),
   transpilePackages: ["@zsite/core", "@zsite/platform", "@zsite/runtime", "@zsite/connectors", "@zsite/ai"],
-  serverExternalPackages: ["pg"],
+  // The AWS SDK resolves credential providers with dynamic imports; bundling can drop them.
+  serverExternalPackages: ["pg", "@aws-sdk/client-bedrock-runtime"],
   poweredByHeader: false,
   experimental: {
     // An AI edit can take a minute or two; the action waits for it.

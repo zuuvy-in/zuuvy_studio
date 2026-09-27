@@ -50,3 +50,8 @@ npm run db:reset         # drop, migrate and seed again
 npm run worker           # the outbox worker on its own
 npm run mock:zuuvy       # the mock Zuuvy on its own
 ```
+
+## Deploying
+
+Pushes to `main` deploy to AWS through GitHub Actions. One-time setup and the
+GitHub variables it needs are in `docs/DEPLOYMENT.md`.

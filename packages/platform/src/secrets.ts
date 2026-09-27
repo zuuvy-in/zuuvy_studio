@@ -19,9 +19,12 @@ function key(): Buffer {
     if (isProduction()) throw new Error("SECRETS_KEY is not set");
     return DEV_KEY;
   }
+  // Either 32 random bytes in base64 (`openssl rand -base64 32`), or a long
+  // random string — what AWS Secrets Manager generates — stretched to 32 bytes.
   const buf = Buffer.from(raw, "base64");
-  if (buf.length !== 32) throw new Error("SECRETS_KEY must be 32 bytes, base64-encoded");
-  return buf;
+  if (buf.length === 32 && /^[A-Za-z0-9+/]{43}=$/.test(raw)) return buf;
+  if (raw.length >= 32) return createHash("sha256").update(raw, "utf8").digest();
+  throw new Error("SECRETS_KEY must be 32 bytes in base64, or a random string of at least 32 characters");
 }
 
 const keyId = (k: Buffer) => createHash("sha256").update(k).digest("hex").slice(0, 8);

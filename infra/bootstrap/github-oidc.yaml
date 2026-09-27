@@ -1,0 +1,102 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Zuuvy Sites — lets GitHub Actions deploy to this account without stored AWS
+  keys. GitHub proves which repository and environment a job runs in (OIDC);
+  AWS hands that job short-lived credentials for this role, and only that job.
+  Create once per AWS account (CloudFormation console → Create stack → Upload).
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Default: zuuvy-in
+  RepoName:
+    Type: String
+    Default: zuuvy_ai_site
+  EnvironmentName:
+    Type: String
+    Default: production
+    Description: The GitHub environment whose jobs may deploy (Settings → Environments).
+  CreateOidcProvider:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: >
+      "false" if this account already has the token.actions.githubusercontent.com
+      identity provider (IAM → Identity providers); an account can hold only one.
+  CdkQualifier:
+    Type: String
+    Default: hnb659fds
+    Description: CDK bootstrap qualifier (the default unless you changed it).
+
+Conditions:
+  MakeProvider: !Equals [!Ref CreateOidcProvider, "true"]
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: zsite-github-deploy
+      Description: Assumed by GitHub Actions (zuuvy_ai_site, production environment) to deploy Zuuvy Sites.
+      MaxSessionDuration: 7200
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - MakeProvider
+                - !Ref GitHubOidcProvider
+                - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                # Only jobs that run in the protected environment of this one repository.
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}/${RepoName}:environment:${EnvironmentName}
+      Policies:
+        - PolicyName: deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Everything CloudFormation does goes through the CDK bootstrap roles,
+              # which the bootstrap step creates; this role only assumes them.
+              - Sid: UseCdkBootstrapRoles
+                Effect: Allow
+                Action: sts:AssumeRole
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-${CdkQualifier}-*
+              - Sid: ReadStackOutputs
+                Effect: Allow
+                Action: [cloudformation:DescribeStacks]
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/Zsite*/*
+              # The migration step: start the one-off task, wait for it, read its logs.
+              - Sid: RunMigrationTask
+                Effect: Allow
+                Action: [ecs:RunTask]
+                Resource: !Sub arn:${AWS::Partition}:ecs:*:${AWS::AccountId}:task-definition/ZsiteBase*
+              - Sid: WatchMigrationTask
+                Effect: Allow
+                Action: [ecs:DescribeTasks]
+                Resource: "*"
+              - Sid: PassMigrationRoles
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/ZsiteBase-*
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ecs-tasks.amazonaws.com
+              - Sid: ReadMigrationLogs
+                Effect: Allow
+                Action: [logs:FilterLogEvents, logs:GetLogEvents, logs:DescribeLogStreams]
+                Resource: !Sub arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:ZsiteBase-*
+
+Outputs:
+  DeployRoleArn:
+    Description: Put this in the GitHub repository variable AWS_DEPLOY_ROLE_ARN.
+    Value: !GetAtt DeployRole.Arn
