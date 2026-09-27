@@ -45,7 +45,7 @@ export async function generateVersion(
 
   let result: EditResult;
   try {
-    result = await editor({ tree: base.tree!, prompt, context, model: config.aiModel() });
+    result = await editor({ tree: base.tree!, prompt, context, provider: config.aiProvider(), model: config.aiModel() || undefined });
   } catch (e) {
     if (e instanceof AgentError) throw new UserError(e.message);
     throw e;
@@ -58,7 +58,7 @@ export async function generateVersion(
       source: "ai",
       prompt,
       summary: result.summary,
-      aiMeta: { model: result.model, operations: result.operations.length, usage: result.usage },
+      aiMeta: { provider: result.provider, model: result.model, operations: result.operations.length, usage: result.usage },
       userId: input.userId,
     }),
   );

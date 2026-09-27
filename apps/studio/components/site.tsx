@@ -60,12 +60,15 @@ export function Composer({
   siteId,
   baseNumber,
   aiReady,
+  setupHint,
   title = "Describe a change",
 }: {
   action: (state: ActionState, form: FormData) => Promise<ActionState>;
   siteId: string;
   baseNumber: number;
   aiReady: boolean;
+  /** What to configure when the AI is not ready, for the provider in use. */
+  setupHint?: string;
   title?: string;
 }) {
   const [state, formAction] = useActionState(action, null);
@@ -82,7 +85,7 @@ export function Composer({
       <ComposerBody disabled={!aiReady} />
       {!aiReady && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">
-          AI editing needs an API key: set <code className="font-mono">ANTHROPIC_API_KEY</code> in the environment and restart.
+          {setupHint ?? "AI editing is not configured."}
         </p>
       )}
       <Message state={state} />

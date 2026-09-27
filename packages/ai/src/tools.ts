@@ -4,11 +4,47 @@
  * cannot produce a tree the runtime would refuse — an invalid call comes back
  * as a tool error in words it can correct ("hero props: heading: Required").
  */
-import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { BLOCK_TYPES, type BlockType, FONTS, type Operation, type SiteTree, applyOps } from "@zsite/core";
 import { z } from "zod";
 
 export type EditState = { tree: SiteTree; operations: Operation[] };
+
+/**
+ * A tool as the agent defines it, independent of any model provider. Each
+ * provider adapter (providers/*.ts) turns these into its own tool format;
+ * `run` validates its input itself, so no provider's parsing is trusted.
+ */
+export type SiteTool = {
+  name: string;
+  description: string;
+  inputSchema: z.ZodType;
+  run: (input: unknown) => string;
+};
+
+/** Thrown for input the model got wrong; its message goes back to the model. */
+export class ToolInputError extends Error {
+  override name = "ToolInputError";
+}
+
+function siteTool<S extends z.ZodType>(def: {
+  name: string;
+  description: string;
+  inputSchema: S;
+  run: (input: z.infer<S>) => string;
+}): SiteTool {
+  return {
+    name: def.name,
+    description: def.description,
+    inputSchema: def.inputSchema,
+    run: (raw) => {
+      const parsed = def.inputSchema.safeParse(raw ?? {});
+      if (!parsed.success) {
+        throw new ToolInputError(parsed.error.issues.slice(0, 4).map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; "));
+      }
+      return def.run(parsed.data);
+    },
+  };
+}
 
 const LinkInput = z.object({ label: z.string(), href: z.string() });
 const hex = z.string().describe("#rrggbb");
@@ -33,23 +69,23 @@ export function createSiteTools(initial: SiteTree) {
   const state: EditState = { tree: initial, operations: [] };
 
   const apply = (op: Operation, result: (tree: SiteTree) => Record<string, unknown> = () => ({})) => {
-    // applyOps throws OpError with a readable message; the tool runner turns a
-    // throw into an is_error tool result, which is what we want.
+    // applyOps throws OpError with a readable message; every provider adapter
+    // turns a throw into an error tool result the model can correct.
     const next = applyOps(state.tree, [op]);
     state.tree = next;
     state.operations.push(op);
     return JSON.stringify({ ok: true, ...result(next) });
   };
 
-  const tools = [
-    betaZodTool({
+  const tools: SiteTool[] = [
+    siteTool({
       name: "view_site",
       description:
         "Return the full current site tree as JSON, including edits made so far in this turn. Use it when you need exact props before changing a section.",
       inputSchema: z.object({}),
       run: () => JSON.stringify(state.tree),
     }),
-    betaZodTool({
+    siteTool({
       name: "add_section",
       description:
         "Add a section (one block) to a page. `props` must match the block's schema from the system prompt. Returns the new section's id.",
@@ -68,45 +104,45 @@ export function createSiteTools(initial: SiteTree) {
         );
       },
     }),
-    betaZodTool({
+    siteTool({
       name: "update_section",
       description:
         "Change some props of a section. Send only the fields to change; arrays (items) are replaced whole. Send null to clear an optional field.",
       inputSchema: z.object({ section: z.string(), props: z.record(z.string(), z.unknown()) }),
       run: (i) => apply({ op: "updateSection", section: i.section, props: i.props }),
     }),
-    betaZodTool({
+    siteTool({
       name: "remove_section",
       description: "Remove a section.",
       inputSchema: z.object({ section: z.string() }),
       run: (i) => apply({ op: "removeSection", section: i.section }),
     }),
-    betaZodTool({
+    siteTool({
       name: "move_section",
       description: "Move a section to a position on its page (0 = top).",
       inputSchema: z.object({ section: z.string(), index: z.number().int().min(0) }),
       run: (i) => apply({ op: "moveSection", section: i.section, index: i.index }),
     }),
-    betaZodTool({
+    siteTool({
       name: "add_page",
       description: "Add an empty page. Add sections to it afterwards, and a nav link if people should find it.",
       inputSchema: z.object({ path: z.string().describe("/lowercase-words"), title: z.string() }),
       run: (i) =>
         apply({ op: "addPage", path: i.path, title: i.title }, (tree) => ({ page: tree.pages.find((p) => p.path === i.path)?.id })),
     }),
-    betaZodTool({
+    siteTool({
       name: "update_page",
       description: "Rename a page or change its path. The home page stays at /.",
       inputSchema: z.object({ page: z.string(), path: z.string().optional(), title: z.string().optional() }),
       run: (i) => apply({ op: "updatePage", page: i.page, ...(i.path ? { path: i.path } : {}), ...(i.title ? { title: i.title } : {}) }),
     }),
-    betaZodTool({
+    siteTool({
       name: "remove_page",
       description: "Remove a page (not the home page). Also remove links to it.",
       inputSchema: z.object({ page: z.string() }),
       run: (i) => apply({ op: "removePage", page: i.page }),
     }),
-    betaZodTool({
+    siteTool({
       name: "set_theme",
       description: `Change colours, fonts or corner radius. Send only what changes. Fonts: ${FONTS.join(", ")}. Keep text readable against background and surface.`,
       inputSchema: z.object({
@@ -119,13 +155,13 @@ export function createSiteTools(initial: SiteTree) {
       }),
       run: (i) => apply({ op: "setTheme", theme: i }),
     }),
-    betaZodTool({
+    siteTool({
       name: "set_site_details",
       description: "Set the site's title and description (browser tab and search results).",
       inputSchema: z.object({ title: z.string().optional(), description: z.string().optional() }),
       run: (i) => apply({ op: "setMeta", ...i }),
     }),
-    betaZodTool({
+    siteTool({
       name: "set_navigation",
       description: "Set the header: brand name, links (max 8), and an optional button (null removes it).",
       inputSchema: z.object({
@@ -135,7 +171,7 @@ export function createSiteTools(initial: SiteTree) {
       }),
       run: (i) => apply({ op: "setNav", ...i }),
     }),
-    betaZodTool({
+    siteTool({
       name: "set_footer",
       description: "Set the footer text and links.",
       inputSchema: z.object({ text: z.string().optional(), links: z.array(LinkInput).optional() }),

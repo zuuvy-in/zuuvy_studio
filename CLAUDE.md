@@ -37,5 +37,9 @@ npm run typecheck
   (dev only) — a user-supplied URL the server fetches is an SSRF door.
 - **Stock is never reserved here.** Zuuvy reserves at confirmation; this side
   mirrors what Zuuvy says and only moves an order forward.
+- **AI tools are provider-neutral** (`packages/ai/src/tools.ts`). Bedrock
+  (Amazon Nova, the default — AWS-credit-covered) and Anthropic are adapters in
+  `providers/`; a new provider maps `SiteTool`s to its format and must return
+  thrown tool errors to the model rather than fail the turn.
 - **Next 16**: `params`/`searchParams`/`cookies()`/`headers()` are async;
   `next dev` writes `AGENTS.md`/`CLAUDE.md` into each app — keep them.

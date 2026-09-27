@@ -162,6 +162,7 @@ describe("versions", () => {
       operations: [{ op: "setMeta" as const, title: "x" }],
       summary: "Retitled the site.",
       model: "fake-model",
+      provider: "bedrock" as const,
       usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, requests: 1 },
       stopReason: "end_turn",
     });

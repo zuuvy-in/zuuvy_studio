@@ -1,4 +1,3 @@
-import { aiConfigured } from "@zsite/ai";
 import { diffTrees } from "@zsite/core";
 import { NotFound, getSite, getVersion, getVersionByNumber, latestVersion, withTenant } from "@zsite/platform";
 import { notFound } from "next/navigation";
@@ -8,6 +7,7 @@ import { ActionForm, SubmitButton } from "@/components/forms";
 import { Composer, PreviewFrame } from "@/components/site";
 import { Badge, ButtonLink, Card, CardHeader, Dl, Icon } from "@/components/ui";
 import { ago, dateTime } from "@/lib/format";
+import { aiStatus } from "@/lib/ai";
 import { requireSession } from "@/lib/session";
 import { generateAction, publishAction, restoreAction } from "../../../actions";
 
@@ -16,6 +16,7 @@ export default async function VersionPage({ params }: { params: Promise<{ siteId
   const number = Number(raw);
   if (!Number.isInteger(number) || number < 1) notFound();
   const session = await requireSession();
+  const ai = aiStatus();
   const data = await withTenant(session.tenant.id, async (tx) => {
     const site = await getSite(tx, siteId);
     const version = await getVersionByNumber(tx, siteId, number);
@@ -28,7 +29,7 @@ export default async function VersionPage({ params }: { params: Promise<{ siteId
   });
   const { site, version, parent, latest } = data;
   const changes = parent?.tree && version.tree ? diffTrees(parent.tree, version.tree) : [];
-  const meta = version.ai_meta as { model?: string; operations?: number; usage?: { input_tokens: number; output_tokens: number } } | null;
+  const meta = version.ai_meta as { provider?: string; model?: string; operations?: number; usage?: { input_tokens: number; output_tokens: number } } | null;
   const pages = version.tree?.pages.map((p) => ({ path: p.path, title: p.title })) ?? [];
 
   return (
@@ -72,7 +73,7 @@ export default async function VersionPage({ params }: { params: Promise<{ siteId
           ) : (
             <Card className="p-8 text-sm text-slate-600">This is a code version ({version.git_ref}); previews of code versions come with Git import.</Card>
           )}
-          <Composer action={generateAction} siteId={site.id} baseNumber={version.number} aiReady={aiConfigured()} title={`Continue from v${version.number}`} />
+          <Composer action={generateAction} siteId={site.id} baseNumber={version.number} aiReady={ai.ready} setupHint={ai.hint} title={`Continue from v${version.number}`} />
         </div>
 
         <aside className="space-y-6">
@@ -94,7 +95,7 @@ export default async function VersionPage({ params }: { params: Promise<{ siteId
                 ["By", version.created_by_name ?? "System"],
                 ["Based on", version.parent_number ? `v${version.parent_number}` : "—"],
                 ["Runtime", version.runtime_version],
-                ...(meta?.model ? ([["Model", meta.model]] as [string, string][]) : []),
+                ...(meta?.model ? ([["Model", meta.provider === "bedrock" ? `${meta.model} (Bedrock)` : meta.model]] as [string, string][]) : []),
                 ...(meta?.operations ? ([["Edits made", String(meta.operations)]] as [string, string][]) : []),
               ]}
             />

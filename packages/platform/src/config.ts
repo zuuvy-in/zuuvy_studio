@@ -45,7 +45,10 @@ export const config = {
   /** Where webhooks reach this platform from the outside. */
   publicApiUrl: () => env("PUBLIC_API_URL", "http://localhost:3000"),
   secretsKey: () => process.env.SECRETS_KEY ?? "",
-  aiModel: () => env("ZSITE_AI_MODEL", "claude-opus-5"),
+  /** bedrock (Amazon Nova, AWS credits) or anthropic (Claude). */
+  aiProvider: () => (env("ZSITE_AI_PROVIDER", "bedrock") === "anthropic" ? ("anthropic" as const) : ("bedrock" as const)),
+  /** Empty = the provider's default model (see @zsite/ai DEFAULT_MODELS). */
+  aiModel: () => env("ZSITE_AI_MODEL", ""),
 };
 
 export function siteUrl(subdomain: string): string {

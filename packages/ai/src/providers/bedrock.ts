@@ -1,0 +1,151 @@
+/**
+ * Amazon Bedrock through the Converse API — the default provider, running
+ * Amazon Nova, which AWS promotional (startup) credits cover as a first-party
+ * AWS service. Converse is model-agnostic, so any Bedrock model with tool use
+ * can be named in ZSITE_AI_MODEL without code changes.
+ *
+ * A hand-written loop rather than a framework: the model asks for tools, we
+ * run them (each validates its own input), send the results back, and stop on
+ * the model's final text or the iteration cap.
+ *
+ * Credentials come from the AWS SDK's default chain: env keys or AWS_PROFILE
+ * locally, the task/Lambda role in production. Nothing is read here.
+ */
+import {
+  BedrockRuntimeClient,
+  type ContentBlock,
+  ConverseCommand,
+  type ConverseCommandInput,
+  type ConverseCommandOutput,
+  type Message,
+  type SystemContentBlock,
+  type Tool,
+  type ToolResultBlock,
+} from "@aws-sdk/client-bedrock-runtime";
+import { z } from "zod";
+import { AgentError } from "../errors";
+import type { SiteTool } from "../tools";
+import { type Provider, emptyUsage } from "./types";
+
+/** Anything with the client's `send` — a real BedrockRuntimeClient, or a fake in tests. */
+export type ConverseSender = { send(command: ConverseCommand): Promise<ConverseCommandOutput> };
+
+export type BedrockOptions = {
+  client?: ConverseSender;
+  region?: string;
+  /** Output cap per request; must be within the model's limit (5,000 is safe across Nova models). */
+  maxTokens?: number;
+  /** Tool calling is most reliable near-greedy; AWS recommends it for Nova. */
+  temperature?: number;
+  /** Add a cache point after the (large, stable) system prompt. Only for models that support prompt caching. */
+  promptCache?: boolean;
+};
+
+const MAX_MALFORMED_RETRIES = 2;
+
+export function toBedrockTools(tools: SiteTool[]): Tool[] {
+  return tools.map((t) => ({
+    toolSpec: {
+      name: t.name,
+      description: t.description,
+      inputSchema: { json: z.toJSONSchema(t.inputSchema, { io: "input", unrepresentable: "any" }) as never },
+    },
+  }));
+}
+
+function runTool(tools: SiteTool[], block: NonNullable<ContentBlock.ToolUseMember["toolUse"]>): ToolResultBlock {
+  const tool = tools.find((t) => t.name === block.name);
+  try {
+    if (!tool) throw new Error(`There is no tool called ${block.name}.`);
+    return { toolUseId: block.toolUseId, content: [{ text: tool.run(block.input) }], status: "success" };
+  } catch (e) {
+    return { toolUseId: block.toolUseId, content: [{ text: `Error: ${(e as Error).message}` }], status: "error" };
+  }
+}
+
+function explain(e: unknown, model: string, region: string): never {
+  const err = e as Error & { name?: string };
+  switch (err.name) {
+    case "CredentialsProviderError":
+      throw new AgentError("No AWS credentials found for Bedrock. Set AWS_PROFILE or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (in production, the service's IAM role).");
+    case "AccessDeniedException":
+      throw new AgentError(`AWS refused access to ${model} in ${region}. Check the IAM policy allows bedrock:InvokeModel and that the model is enabled in the Bedrock console for this region.`);
+    case "ResourceNotFoundException":
+    case "ValidationException":
+      throw new AgentError(`Bedrock rejected the request for ${model} in ${region}: ${err.message}. Some regions need an inference profile id (e.g. "apac.amazon.nova-pro-v1:0").`);
+    case "ThrottlingException":
+    case "ServiceQuotaExceededException":
+      throw new AgentError("Bedrock is throttling requests. Try again in a minute.");
+    case "ModelNotReadyException":
+    case "ServiceUnavailableException":
+    case "InternalServerException":
+      throw new AgentError(`Bedrock is temporarily unavailable (${err.name}). Try again shortly.`);
+    default:
+      throw e;
+  }
+}
+
+export function bedrockProvider(opts: BedrockOptions = {}): Provider {
+  const region = opts.region ?? process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "ap-south-1";
+  const client = opts.client ?? new BedrockRuntimeClient({ region });
+
+  return async ({ system, user, tools, model, maxIterations }) => {
+    const systemBlocks: SystemContentBlock[] = [{ text: system }];
+    if (opts.promptCache) systemBlocks.push({ cachePoint: { type: "default" } });
+    const toolConfig = { tools: toBedrockTools(tools) };
+    const messages: Message[] = [{ role: "user", content: [{ text: user }] }];
+    const usage = emptyUsage();
+    let malformed = 0;
+    let lastText = "";
+
+    for (let i = 0; i < maxIterations; i++) {
+      const input: ConverseCommandInput = {
+        modelId: model,
+        system: systemBlocks,
+        messages,
+        toolConfig,
+        inferenceConfig: { maxTokens: opts.maxTokens ?? 5000, temperature: opts.temperature ?? 0 },
+      };
+      let res: ConverseCommandOutput;
+      try {
+        res = await client.send(new ConverseCommand(input));
+      } catch (e) {
+        explain(e, model, region);
+      }
+      usage.requests++;
+      usage.input_tokens += res.usage?.inputTokens ?? 0;
+      usage.output_tokens += res.usage?.outputTokens ?? 0;
+      usage.cache_read_input_tokens += res.usage?.cacheReadInputTokens ?? 0;
+
+      const stop = res.stopReason ?? null;
+      if (stop === "content_filtered" || stop === "guardrail_intervened") {
+        return { finalText: "", model, usage, stopReason: stop, refused: true };
+      }
+      if (stop === "malformed_tool_use" || stop === "malformed_model_output") {
+        // The model produced a call we cannot parse. Ask once or twice for a clean retry.
+        if (++malformed > MAX_MALFORMED_RETRIES) throw new AgentError("The AI kept producing malformed tool calls. Try a simpler request.");
+        messages.push({ role: "user", content: [{ text: "Your last tool call could not be parsed. Call the tool again with valid JSON input matching its schema." }] });
+        continue;
+      }
+      if (stop === "model_context_window_exceeded") throw new AgentError("This site is too large for the AI model's context. Try a smaller change.");
+
+      const message = res.output?.message;
+      if (!message?.content) throw new AgentError("Bedrock returned no message.");
+      messages.push(message);
+      const text = message.content
+        .map((b) => ("text" in b && typeof b.text === "string" ? b.text : ""))
+        .join(" ")
+        .trim();
+      if (text) lastText = text;
+
+      const uses = message.content.flatMap((b) => ("toolUse" in b && b.toolUse ? [b.toolUse] : []));
+      if (!uses.length) {
+        return { finalText: lastText, model, usage, stopReason: stop, refused: false };
+      }
+      if (stop === "max_tokens") throw new AgentError("The AI's reply was cut off mid-edit. Try a smaller change.");
+      // All results for one assistant turn go back in a single user message.
+      messages.push({ role: "user", content: uses.map((u) => ({ toolResult: runTool(tools, u) })) });
+    }
+    return { finalText: lastText, model, usage, stopReason: "max_iterations", refused: false };
+  };
+}

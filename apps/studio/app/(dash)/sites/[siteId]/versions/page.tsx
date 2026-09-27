@@ -1,4 +1,3 @@
-import { aiConfigured } from "@zsite/ai";
 import { getSite, listPublications, listVersions, withTenant } from "@zsite/platform";
 import Link from "next/link";
 import { SourceBadge } from "@/components/badges";
@@ -6,6 +5,7 @@ import { ActionForm, SubmitButton } from "@/components/forms";
 import { Composer } from "@/components/site";
 import { Badge, ButtonLink, Card, CardHeader, Icon } from "@/components/ui";
 import { ago, dateTime } from "@/lib/format";
+import { aiStatus } from "@/lib/ai";
 import { requireSession } from "@/lib/session";
 import { generateAction, publishAction } from "../../actions";
 
@@ -14,6 +14,7 @@ export const metadata = { title: "Versions" };
 export default async function VersionsPage({ params }: { params: Promise<{ siteId: string }> }) {
   const { siteId } = await params;
   const session = await requireSession();
+  const ai = aiStatus();
   const { site, versions, publications } = await withTenant(session.tenant.id, async (tx) => ({
     site: await getSite(tx, siteId),
     versions: await listVersions(tx, siteId),
@@ -24,7 +25,7 @@ export default async function VersionsPage({ params }: { params: Promise<{ siteI
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div className="min-w-0 space-y-6">
-        <Composer action={generateAction} siteId={site.id} baseNumber={latest.number} aiReady={aiConfigured()} />
+        <Composer action={generateAction} siteId={site.id} baseNumber={latest.number} aiReady={ai.ready} setupHint={ai.hint} />
 
         <Card>
           <CardHeader title="All versions" description="Every change is kept. Open one to preview it, see what changed, publish it or bring it back." />

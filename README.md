@@ -14,7 +14,7 @@ Needs Node 22.12+ (`nvm use` reads `.nvmrc`) and PostgreSQL 16 binaries (`initdb
 
 ```bash
 npm install
-cp .env.example .env          # add ANTHROPIC_API_KEY to enable AI edits
+cp .env.example .env          # AI edits: AWS_REGION + AWS_PROFILE (Amazon Nova on Bedrock)
 npm run db:start              # local Postgres in .data/pg on :54329
 npm run db:migrate
 npm run db:seed               # demo@zuuvy.site / demo12345, site at demo.localhost:3001

@@ -1,13 +1,21 @@
 /**
  * The site-building agent. Given a site tree and a request ("make it feel
- * premium", "add an FAQ about delivery"), Claude edits the tree through the
+ * premium", "add an FAQ about delivery"), a model edits the tree through the
  * tools in `tools.ts` and ends with a one-line summary. The caller saves the
  * result as a new, unpublished version — nothing the agent does reaches a
  * live site without a person pressing Publish.
+ *
+ * Which model does the work is a provider choice (`providers/`):
+ *   bedrock   (default) Amazon Nova via the Bedrock Converse API — covered by AWS credits
+ *   anthropic Claude via Anthropic's API
+ * The prompt, the tools and every validation rule are the same for both.
  */
-import Anthropic from "@anthropic-ai/sdk";
 import { BLOCKS, type Operation, type SiteTree } from "@zsite/core";
 import { z } from "zod";
+import { AgentError } from "./errors";
+import { anthropicProvider } from "./providers/anthropic";
+import { type BedrockOptions, bedrockProvider } from "./providers/bedrock";
+import type { Provider, Usage } from "./providers/types";
 import { createSiteTools, outline } from "./tools";
 
 export type SiteContext = {
@@ -24,13 +32,21 @@ export type EditResult = {
   operations: Operation[];
   summary: string;
   model: string;
-  usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens: number; requests: number };
+  provider: ProviderName;
+  usage: Usage;
   stopReason: string | null;
 };
 
-export class AgentError extends Error {
-  override name = "AgentError";
-}
+export { AgentError };
+
+export type ProviderName = "bedrock" | "anthropic";
+
+export const DEFAULT_MODELS: Record<ProviderName, string> = {
+  // Cross-region inference profile for Asia Pacific (the Mumbai region routes through it).
+  // Override with ZSITE_AI_MODEL, e.g. "us.amazon.nova-premier-v1:0" in us-east-1.
+  bedrock: "apac.amazon.nova-pro-v1:0",
+  anthropic: "claude-opus-5",
+};
 
 function blockReference(): string {
   return Object.entries(BLOCKS)
@@ -62,14 +78,22 @@ export type EditOptions = {
   tree: SiteTree;
   prompt: string;
   context: SiteContext;
-  client?: Anthropic;
+  provider?: ProviderName;
   model?: string;
   maxIterations?: number;
+  /** Supply a ready provider (tests); otherwise one is built from `provider`. */
+  runner?: Provider;
+  bedrock?: BedrockOptions;
 };
 
+export function resolveProvider(name: string | undefined): ProviderName {
+  return name === "anthropic" ? "anthropic" : "bedrock";
+}
+
 export async function editSite(opts: EditOptions): Promise<EditResult> {
-  const client = opts.client ?? new Anthropic();
-  const model = opts.model ?? "claude-opus-5";
+  const provider = opts.provider ?? resolveProvider(process.env.ZSITE_AI_PROVIDER);
+  const model = opts.model || DEFAULT_MODELS[provider];
+  const run = opts.runner ?? (provider === "anthropic" ? anthropicProvider() : bedrockProvider(opts.bedrock));
   const { tools, state } = createSiteTools(opts.tree);
   const ctx = opts.context;
 
@@ -94,57 +118,27 @@ ${JSON.stringify(opts.tree)}
 Request:
 ${opts.prompt}`;
 
-  const runner = client.beta.messages.toolRunner({
-    model,
-    max_tokens: 16000,
-    max_iterations: opts.maxIterations ?? 30,
-    // A policy decline on the primary model is retried on a fallback server-side.
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-    tools,
-    messages: [{ role: "user", content: user }],
-  });
+  const result = await run({ system: SYSTEM, user, tools, model, maxIterations: opts.maxIterations ?? 30 });
 
-  const usage = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, requests: 0 };
-  let last: Anthropic.Beta.BetaMessage | null = null;
-  try {
-    for await (const message of runner) {
-      last = message;
-      usage.requests++;
-      usage.input_tokens += message.usage.input_tokens;
-      usage.output_tokens += message.usage.output_tokens;
-      usage.cache_read_input_tokens += message.usage.cache_read_input_tokens ?? 0;
-    }
-  } catch (e) {
-    if (e instanceof Anthropic.AuthenticationError) throw new AgentError("The AI service rejected the API key. Set ANTHROPIC_API_KEY.");
-    if (e instanceof Anthropic.RateLimitError) throw new AgentError("The AI service is busy. Try again in a minute.");
-    if (e instanceof Anthropic.APIError) throw new AgentError(`The AI service failed (${e.status}): ${e.message}`);
-    throw e;
-  }
-
-  if (!last) throw new AgentError("The AI returned nothing.");
-  if (last.stop_reason === "refusal") throw new AgentError("The AI declined this request. Try rephrasing it.");
+  if (result.refused) throw new AgentError("The AI declined this request. Try rephrasing it.");
   if (!state.operations.length) {
-    const said = textOf(last);
-    throw new AgentError(said ? `The AI made no changes: ${said}` : "The AI made no changes.");
+    throw new AgentError(result.finalText ? `The AI made no changes: ${result.finalText.slice(0, 300)}` : "The AI made no changes.");
   }
   return {
     tree: state.tree,
     operations: state.operations,
-    summary: textOf(last).slice(0, 300) || `${state.operations.length} changes`,
-    model: last.model,
-    usage,
-    stopReason: last.stop_reason,
+    summary: result.finalText.slice(0, 300) || `${state.operations.length} changes`,
+    model: result.model,
+    provider,
+    usage: result.usage,
+    stopReason: result.stopReason,
   };
 }
 
-function textOf(message: Anthropic.Beta.BetaMessage): string {
-  return message.content
-    .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
-    .map((b) => b.text.trim())
-    .join(" ")
-    .trim();
+/** Whether the configured provider has what it needs to be tried at all. */
+export function aiConfigured(): boolean {
+  const provider = resolveProvider(process.env.ZSITE_AI_PROVIDER);
+  if (provider === "anthropic") return Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+  // Credentials resolve lazily through the AWS chain (keys, profile, role); a region is the one thing we can check.
+  return Boolean(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION);
 }
-
-export const aiConfigured = () => Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);

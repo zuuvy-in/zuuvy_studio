@@ -13,6 +13,7 @@ customers first; open to anyone after.
 | Money | Through the tenant's own gateway; through ours only if they pick the default one (split settlement via a licensed aggregator — never funds in our own account), for a flat fee |
 | Stock | Reserved in Zuuvy at order confirmation: online-paid on arrival, COD when the business accepts |
 | Cloud | AWS end to end; platform domain `zuuvy.site`; domains registered through Route 53 |
+| AI models | Only models covered by AWS startup credits to begin with: Amazon Nova on Bedrock. Claude stays a one-setting switch (`ZSITE_AI_PROVIDER=anthropic`) |
 
 ## The one idea everything rests on: a site is data
 
@@ -89,13 +90,25 @@ change — including the prompt and model for AI versions.
 
 ## AI
 
-`packages/ai`: Claude through the Anthropic SDK's tool runner, one tool per
-operation plus `view_site`. The system prompt carries every block's JSON
-schema (generated from the same zod schemas that validate the tree) and is
-cached. Output is always a **new unpublished version** parented on the one the
-owner was looking at. Model via `ZSITE_AI_MODEL` (default `claude-opus-5`),
-with server-side refusal fallback enabled. On AWS this moves to Bedrock or
-Claude Platform on AWS; the agent code is unchanged apart from the client.
+`packages/ai`: one tool per operation plus `view_site`, defined once
+(`tools.ts`) with no provider in them — each validates its own input, so a
+weaker model's bad call is an error it corrects, never a broken site. The
+system prompt carries every block's JSON schema (generated from the same zod
+schemas that validate the tree). Output is always a **new unpublished
+version** parented on the one the owner was looking at.
+
+Providers (`providers/`), chosen by `ZSITE_AI_PROVIDER`:
+
+| Provider | Model (default) | Why |
+|---|---|---|
+| `bedrock` (default) | Amazon Nova Pro via the Converse API, `apac.amazon.nova-pro-v1:0` | AWS's own model family: covered by AWS promotional credits. Any Bedrock model with tool use works via `ZSITE_AI_MODEL`, e.g. Nova Premier (`us.amazon.nova-premier-v1:0`, US regions) for harder edits. |
+| `anthropic` | Claude (`claude-opus-5`) via the Anthropic SDK tool runner | Stronger multi-step editing; for when budget or credits allow. |
+
+Credentials for Bedrock come from the AWS SDK chain (profile or keys locally,
+the service's IAM role in production). Sampling is near-greedy
+(`temperature: 0`), which AWS recommends for Nova tool use. Before relying on
+one model over another, measure the edit success rate on real prompts — a
+failed edit shows up as "the AI made no changes".
 
 ## Integrations
 
