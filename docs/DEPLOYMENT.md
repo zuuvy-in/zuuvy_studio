@@ -36,7 +36,8 @@ Optionally add required reviewers to approve each deploy. Then add these
 | `AWS_REGION` | `ap-south-1` | Region for everything (Mumbai) |
 | `AWS_DEPLOY_ROLE_ARN` | `arn:aws:iam::123456789012:role/zsite-github-deploy` | Output of the bootstrap stack (step 2 below) |
 | `PLATFORM_DOMAIN` | `zuuvy.site` | The platform domain |
-| `HOSTED_ZONE_ID` | `Z0123456789ABCDEFGHIJ` | Route 53 hosted zone of that domain |
+| `HOSTED_ZONE_ID` | `Z0123456789ABCDEFGHIJ` | Route 53 hosted zone of that domain (used once `DOMAIN_READY=true`) |
+| `DOMAIN_READY` | *(optional)* `true` | Set once `zuuvy.site`'s nameservers point at the Route 53 zone. Until then (unset) the studio and sites are served on CloudFront `*.cloudfront.net` addresses — see "Before the domain is ready" |
 | `ZSITE_AI_MODEL` | *(optional)* `apac.amazon.nova-pro-v1:0` | Bedrock model for AI edits; empty = that default |
 | `DB_MIN_ACU` | *(optional)* `0.5` | Aurora minimum capacity; `0` pauses when idle |
 
@@ -64,6 +65,25 @@ Secrets Manager and inject it in `infra/lib/services-stack.ts` — not in GitHub
    role only assumes those roles and holds no broad permissions itself.
 4. **Bedrock.** Bedrock console (`ap-south-1`) → Model access: make sure
    Amazon Nova Pro is available to the account.
+
+## Before the domain is ready
+
+With `DOMAIN_READY` unset, nothing waits on DNS: the services stack puts two
+CloudFront distributions (HTTPS on their own `*.cloudfront.net` names) in
+front of the load balancer instead of the certificate and Route 53 records.
+
+- The deploy job prints both addresses, and the studio address is the
+  environment URL on the run's page.
+- A site is viewed at `<storefront address>/?site=<name>` — the choice is kept
+  in a cookie, so links within the site work. The studio's "live" links use
+  this form automatically.
+- CloudFront waits at most 60 seconds for an answer; an AI edit that takes
+  longer shows a 504, though the version is still saved.
+
+When the nameservers move to Route 53, set `DOMAIN_READY=true` and re-run the
+workflow: the certificate is issued, `studio.zuuvy.site` and
+`<name>.zuuvy.site` start answering, and the CloudFront distributions are
+removed. Nothing in the database changes.
 
 ## First deploy
 

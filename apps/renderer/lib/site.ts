@@ -1,8 +1,8 @@
 import "server-only";
-import { type ResolvedSite, type StorefrontSite, loadPublished, resolveHost, storefrontData } from "@zsite/platform";
+import { type ResolvedSite, type StorefrontSite, config, loadPublished, resolveHost, storefrontData } from "@zsite/platform";
 import type { ProductView, RenderContext } from "@zsite/runtime";
 import { linkRewriter } from "@zsite/runtime";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { cache } from "react";
 
 export type Current = { resolved: ResolvedSite; site: StorefrontSite };
@@ -11,7 +11,12 @@ export type Current = { resolved: ResolvedSite; site: StorefrontSite };
 export const currentSite = cache(async (): Promise<Current | null> => {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
-  const resolved = await resolveHost(host);
+  let resolved = await resolveHost(host);
+  // Running without the platform domain: the site chosen by ?site= (proxy.ts).
+  if (!resolved && process.env.ZSITE_SITE_PARAM === "1") {
+    const chosen = (await cookies()).get("zs_site")?.value;
+    if (chosen) resolved = await resolveHost(`${chosen}.${config.platformDomain()}`);
+  }
   if (!resolved) return null;
   const site = await loadPublished(resolved);
   return site ? { resolved, site } : null;

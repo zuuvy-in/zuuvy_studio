@@ -65,7 +65,7 @@ jobs:
     timeout-minutes: 60
     environment:
       name: production
-      url: https://studio.${{ vars.PLATFORM_DOMAIN }}
+      url: ${{ steps.urls.outputs.studio }}
     permissions:
       contents: read
       id-token: write # to request the OIDC token AWS trusts
@@ -74,6 +74,9 @@ jobs:
       AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
       PLATFORM_DOMAIN: ${{ vars.PLATFORM_DOMAIN }}
       HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID }}
+      # "true" once the domain's nameservers are on the Route 53 zone; until then
+      # the studio and sites are served on CloudFront addresses.
+      DOMAIN_READY: ${{ vars.DOMAIN_READY }}
       ZSITE_AI_MODEL: ${{ vars.ZSITE_AI_MODEL }}
       DB_MIN_ACU: ${{ vars.DB_MIN_ACU }}
       APP_VERSION: ${{ github.sha }}
@@ -126,11 +129,23 @@ jobs:
         working-directory: infra
         run: npx cdk deploy ZsiteServices --require-approval never --outputs-file services-outputs.json
 
+      - name: Read addresses
+        id: urls
+        working-directory: infra
+        run: |
+          echo "studio=$(jq -r .ZsiteServices.StudioUrl services-outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "sites=$(jq -r .ZsiteServices.SitesUrl services-outputs.json)" >> "$GITHUB_OUTPUT"
+
       - name: Smoke test
+        env:
+          STUDIO_URL: ${{ steps.urls.outputs.studio }}
+          SITES_URL: ${{ steps.urls.outputs.sites }}
         run: |
           set -euo pipefail
+          echo "studio: $STUDIO_URL"
+          echo "sites:  $SITES_URL"
           for i in $(seq 1 20); do
-            BODY=$(curl -fsS "https://studio.${PLATFORM_DOMAIN}/api/health" || true)
+            BODY=$(curl -fsS "${STUDIO_URL}/api/health" || true)
             if echo "$BODY" | grep -q "\"version\":\"${APP_VERSION}\""; then echo "studio serving ${APP_VERSION}"; exit 0; fi
             sleep 15
           done
