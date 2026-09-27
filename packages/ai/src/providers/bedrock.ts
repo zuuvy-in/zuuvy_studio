@@ -71,8 +71,21 @@ function explain(e: unknown, model: string, region: string): never {
     case "AccessDeniedException":
       throw new AgentError(`AWS refused access to ${model} in ${region}. Check the IAM policy allows bedrock:InvokeModel and that the model is enabled in the Bedrock console for this region.`);
     case "ResourceNotFoundException":
-    case "ValidationException":
-      throw new AgentError(`Bedrock rejected the request for ${model} in ${region}: ${err.message}. Some regions need an inference profile id (e.g. "apac.amazon.nova-pro-v1:0").`);
+    case "ValidationException": {
+      // "Operation not allowed" is not about the request: AWS has not opened
+      // Bedrock to this account yet (new accounts are held back, as CloudFront
+      // is) or the model is not enabled. Pointing at the model id sends people
+      // hunting in the wrong place.
+      if (/operation not allowed/i.test(err.message)) {
+        throw new AgentError(
+          `AWS has not allowed this account to use ${model} in ${region} ("${err.message}"). The request itself is fine: enable the model under Bedrock → Model access in ${region}, and if it is already enabled, open an AWS Support case (Account and billing) asking for Bedrock to be enabled on the account.`,
+        );
+      }
+      const profileHint = /^(apac|us|eu|global)\./.test(model)
+        ? ""
+        : ` Some regions need an inference profile id (e.g. "apac.${model}").`;
+      throw new AgentError(`Bedrock rejected the request for ${model} in ${region}: ${err.message}.${profileHint}`);
+    }
     case "ThrottlingException":
     case "ServiceQuotaExceededException":
       throw new AgentError("Bedrock is throttling requests. Try again in a minute.");
