@@ -13,8 +13,26 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DATA="$ROOT/.data/pg"
 PORT="${ZSITE_PG_PORT:-54329}"
-PG_BIN="${PG_BIN:-$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1)}"
-[ -n "$PG_BIN" ] && export PATH="$PG_BIN:$PATH"
+# Find the Postgres server tools: $PG_BIN, then Debian/Ubuntu, then Homebrew (Apple silicon and Intel).
+find_pg_bin() {
+  [ -n "${PG_BIN:-}" ] && { echo "$PG_BIN"; return; }
+  local d
+  for d in $(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V -r) \
+           /opt/homebrew/opt/postgresql@17/bin /opt/homebrew/opt/postgresql@16/bin /opt/homebrew/opt/postgresql/bin \
+           /usr/local/opt/postgresql@17/bin /usr/local/opt/postgresql@16/bin /usr/local/opt/postgresql/bin \
+           /Applications/Postgres.app/Contents/Versions/latest/bin; do
+    [ -x "$d/initdb" ] && { echo "$d"; return; }
+  done
+}
+PG_BIN="$(find_pg_bin)"
+if [ -n "$PG_BIN" ]; then export PATH="$PG_BIN:$PATH"; fi
+if ! command -v initdb >/dev/null 2>&1 || ! command -v pg_ctl >/dev/null 2>&1; then
+  echo "PostgreSQL server tools (initdb, pg_ctl) not found." >&2
+  echo "  macOS:  brew install postgresql@16" >&2
+  echo "  Ubuntu: sudo apt install postgresql-16" >&2
+  echo "  Or point at them: PG_BIN=/path/to/postgres/bin npm run db:start" >&2
+  exit 1
+fi
 
 as_pg() {
   if [ "$(id -u)" = "0" ]; then runuser -u postgres -- "$@"; else "$@"; fi
