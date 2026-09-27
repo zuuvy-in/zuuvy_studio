@@ -12,6 +12,7 @@
     "node": ">=22.12"
   },
   "scripts": {
+    "predev": "node scripts/check-node.mjs",
     "db:start": "bash scripts/db.sh start",
     "db:stop": "bash scripts/db.sh stop",
     "db:migrate": "tsx scripts/migrate.ts",

@@ -10,7 +10,7 @@ Read `docs/ARCHITECTURE.md` for how it fits together and
 
 ## Run it
 
-Needs Node 22.12+ and PostgreSQL 16 binaries (`initdb`, `pg_ctl`).
+Needs Node 22.12+ (`nvm use` reads `.nvmrc`) and PostgreSQL 16 binaries (`initdb`, `pg_ctl`; on macOS `brew install postgresql@16`).
 
 ```bash
 npm install
