@@ -37,6 +37,8 @@ Optionally add required reviewers to approve each deploy. Then add these
 | `AWS_DEPLOY_ROLE_ARN` | `arn:aws:iam::123456789012:role/zsite-github-deploy` | Output of the bootstrap stack (step 2 below) |
 | `PLATFORM_DOMAIN` | `zuuvy.site` | The platform domain |
 | `HOSTED_ZONE_ID` | `Z0123456789ABCDEFGHIJ` | Route 53 hosted zone of that domain (used once `DOMAIN_READY=true`) |
+| `DNS_PROVIDER` | *(optional)* `external` | DNS stays at the registrar; needs `CERTIFICATE_ARN`. See "Keeping DNS at the registrar" |
+| `CERTIFICATE_ARN` | *(optional)* `arn:aws:acm:ap-south-1:…` | An issued ACM certificate for `zuuvy.site` + `*.zuuvy.site` |
 | `DOMAIN_READY` | *(optional)* `true` | Set once `zuuvy.site`'s nameservers point at the Route 53 zone. Until then (unset) the studio and sites are served on CloudFront `*.cloudfront.net` addresses — see "Before the domain is ready" |
 | `ZSITE_AI_MODEL` | *(optional)* `apac.amazon.nova-pro-v1:0` | Bedrock model for AI edits; empty = that default |
 | `DB_MIN_ACU` | *(optional)* `0.5` | Aurora minimum capacity; `0` pauses when idle |
@@ -69,7 +71,33 @@ Secrets Manager and inject it in `infra/lib/services-stack.ts` — not in GitHub
 4. **Bedrock.** Bedrock console (`ap-south-1`) → Model access: make sure
    Amazon Nova Pro is available to the account.
 
+## Keeping DNS at the registrar (Hostinger)
+
+No nameserver change and no CloudFront needed — the load balancer serves
+`studio.zuuvy.site` and `<name>.zuuvy.site` over HTTPS with a certificate you
+request once:
+
+1. **ACM (Mumbai, `ap-south-1`) → Request certificate → public.** Names:
+   `zuuvy.site` and `*.zuuvy.site`; DNS validation. Open it and copy the
+   **CNAME name** and **CNAME value** shown (one record covers both names).
+2. **Hostinger → DNS zone for zuuvy.site → add a CNAME** with that name (the
+   part before `.zuuvy.site`) and value. Within minutes to an hour the
+   certificate shows **Issued**. Copy its **ARN**.
+3. **GitHub variables:** `DOMAIN_READY=true`, `DNS_PROVIDER=external`,
+   `CERTIFICATE_ARN=<the ARN>`. Re-run the workflow.
+4. The deploy prints the **load balancer DNS name**. At Hostinger add two
+   CNAMEs pointing at it: `studio` and `*`. (The bare `zuuvy.site` stays
+   wherever it points now.)
+
+Moving the nameservers to Route 53 later: set `DNS_PROVIDER` back to empty
+(Route 53), remove `CERTIFICATE_ARN`, redeploy.
+
 ## Before the domain is ready
+
+This mode needs CloudFront, which **new AWS accounts cannot use until AWS
+Support verifies them** ("Your account must be verified before you can add
+new CloudFront resources"). Open a case under Account and billing if you hit
+that — or use the registrar-DNS mode above instead.
 
 With `DOMAIN_READY` unset, nothing waits on DNS: the services stack puts two
 CloudFront distributions (HTTPS on their own `*.cloudfront.net` names) in

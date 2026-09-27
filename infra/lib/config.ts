@@ -11,6 +11,10 @@ export type DeployConfig = {
   hostedZoneId: string;
   /** The domain's nameservers are on the Route 53 zone, so certificates can validate. */
   domainReady: boolean;
+  /** Who serves the domain's DNS: "route53" (records written by the stack) or "external" (added by hand at the registrar). */
+  dnsProvider: "route53" | "external";
+  /** An ACM certificate issued outside the stack — required with external DNS. */
+  certificateArn: string;
   studioHost: string;
   appVersion: string;
   aiModel: string;
@@ -29,8 +33,14 @@ function required(name: string): string {
 
 export function loadConfig(): DeployConfig {
   const domain = process.env.PLATFORM_DOMAIN || "zuuvy.site";
-  if (process.env.DOMAIN_READY === "true" && !process.env.HOSTED_ZONE_ID) {
-    throw new Error("DOMAIN_READY=true needs HOSTED_ZONE_ID — see docs/DEPLOYMENT.md");
+  const dnsProvider = process.env.DNS_PROVIDER === "external" ? "external" : "route53";
+  if (process.env.DOMAIN_READY === "true") {
+    if (dnsProvider === "route53" && !process.env.HOSTED_ZONE_ID) {
+      throw new Error("DOMAIN_READY=true with Route 53 DNS needs HOSTED_ZONE_ID — see docs/DEPLOYMENT.md");
+    }
+    if (dnsProvider === "external" && !process.env.CERTIFICATE_ARN) {
+      throw new Error("DNS_PROVIDER=external needs CERTIFICATE_ARN (an issued ACM certificate) — see docs/DEPLOYMENT.md");
+    }
   }
   return {
     account: process.env.CDK_DEFAULT_ACCOUNT || required("AWS_ACCOUNT_ID"),
@@ -38,6 +48,8 @@ export function loadConfig(): DeployConfig {
     domain,
     hostedZoneId: process.env.HOSTED_ZONE_ID || "",
     domainReady: process.env.DOMAIN_READY === "true",
+    dnsProvider,
+    certificateArn: process.env.CERTIFICATE_ARN || "",
     studioHost: `${process.env.STUDIO_SUBDOMAIN || "studio"}.${domain}`,
     appVersion: process.env.APP_VERSION || "local",
     aiModel: process.env.ZSITE_AI_MODEL || "",

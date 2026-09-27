@@ -77,6 +77,9 @@ jobs:
       # "true" once the domain's nameservers are on the Route 53 zone; until then
       # the studio and sites are served on CloudFront addresses.
       DOMAIN_READY: ${{ vars.DOMAIN_READY }}
+      # "external" when DNS stays at the registrar (Hostinger); then CERTIFICATE_ARN is required.
+      DNS_PROVIDER: ${{ vars.DNS_PROVIDER }}
+      CERTIFICATE_ARN: ${{ vars.CERTIFICATE_ARN }}
       ZSITE_AI_MODEL: ${{ vars.ZSITE_AI_MODEL }}
       DB_MIN_ACU: ${{ vars.DB_MIN_ACU }}
       DB_ENGINE_VERSION: ${{ vars.DB_ENGINE_VERSION }}
@@ -146,17 +149,24 @@ jobs:
         run: |
           echo "studio=$(jq -r .ZsiteServices.StudioUrl services-outputs.json)" >> "$GITHUB_OUTPUT"
           echo "sites=$(jq -r .ZsiteServices.SitesUrl services-outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "alb=$(jq -r .ZsiteServices.LoadBalancerDns services-outputs.json)" >> "$GITHUB_OUTPUT"
 
       - name: Smoke test
         env:
           STUDIO_URL: ${{ steps.urls.outputs.studio }}
           SITES_URL: ${{ steps.urls.outputs.sites }}
+          ALB_DNS: ${{ steps.urls.outputs.alb }}
         run: |
           set -euo pipefail
           echo "studio: $STUDIO_URL"
           echo "sites:  $SITES_URL"
+          echo "load balancer (CNAME target for studio and * at the registrar): $ALB_DNS"
+          # With the domain, go straight to the load balancer so the check does not
+          # depend on DNS having caught up; the certificate is still checked for the name.
+          CONNECT=()
+          if [ "$DOMAIN_READY" = "true" ]; then CONNECT=(--connect-to "::${ALB_DNS}:"); fi
           for i in $(seq 1 20); do
-            BODY=$(curl -fsS "${STUDIO_URL}/api/health" || true)
+            BODY=$(curl -fsS "${CONNECT[@]}" "${STUDIO_URL}/api/health" || true)
             if echo "$BODY" | grep -q "\"version\":\"${APP_VERSION}\""; then echo "studio serving ${APP_VERSION}"; exit 0; fi
             sleep 15
           done

@@ -5,7 +5,7 @@
  *   <domain>, *.<domain>   → renderer (every tenant's live site)
  *   (no inbound)           → worker   (outbox: orders to Zuuvy, catalogue syncs)
  *
- * Two ways in, chosen by DOMAIN_READY:
+ * Two ways in, chosen by DOMAIN_READY (and, for the domain, DNS_PROVIDER):
  *
  *   true   One Application Load Balancer with a wildcard ACM certificate for
  *          the platform domain routes by Host; Route 53 records point at it.
@@ -192,15 +192,22 @@ export class ServicesStack extends Stack {
     });
 
     if (cfg.domainReady) {
-      const zone = route53.HostedZone.fromHostedZoneAttributes(this, "Zone", {
-        hostedZoneId: cfg.hostedZoneId,
-        zoneName: cfg.domain,
-      });
-      const certificate = new acm.Certificate(this, "Cert", {
-        domainName: cfg.domain,
-        subjectAlternativeNames: [`*.${cfg.domain}`],
-        validation: acm.CertificateValidation.fromDns(zone),
-      });
+      // Route 53 hosts the domain: the stack issues the certificate and writes
+      // the records. Otherwise (DNS at the registrar, e.g. Hostinger) the
+      // certificate is requested once by hand, validated with a CNAME added
+      // there, and passed in as CERTIFICATE_ARN; `studio` and `*` then point
+      // at LoadBalancerDns with CNAMEs at the registrar.
+      const zone =
+        cfg.dnsProvider === "route53"
+          ? route53.HostedZone.fromHostedZoneAttributes(this, "Zone", { hostedZoneId: cfg.hostedZoneId, zoneName: cfg.domain })
+          : undefined;
+      const certificate = cfg.certificateArn
+        ? acm.Certificate.fromCertificateArn(this, "Cert", cfg.certificateArn)
+        : new acm.Certificate(this, "Cert", {
+            domainName: cfg.domain,
+            subjectAlternativeNames: [`*.${cfg.domain}`],
+            validation: acm.CertificateValidation.fromDns(zone),
+          });
       alb.addListener("Http", {
         port: 80,
         defaultAction: elbv2.ListenerAction.redirect({ protocol: "HTTPS", port: "443", permanent: true }),
@@ -216,10 +223,12 @@ export class ServicesStack extends Stack {
         conditions: [elbv2.ListenerCondition.hostHeaders([cfg.studioHost])],
         action: elbv2.ListenerAction.forward([studioTg]),
       });
-      const alias = route53.RecordTarget.fromAlias(new targets.LoadBalancerTarget(alb));
-      new route53.ARecord(this, "ApexRecord", { zone, target: alias });
-      new route53.ARecord(this, "WildcardRecord", { zone, recordName: `*.${cfg.domain}`, target: alias });
-      new route53.ARecord(this, "StudioRecord", { zone, recordName: cfg.studioHost, target: alias });
+      if (zone) {
+        const alias = route53.RecordTarget.fromAlias(new targets.LoadBalancerTarget(alb));
+        new route53.ARecord(this, "ApexRecord", { zone, target: alias });
+        new route53.ARecord(this, "WildcardRecord", { zone, recordName: `*.${cfg.domain}`, target: alias });
+        new route53.ARecord(this, "StudioRecord", { zone, recordName: cfg.studioHost, target: alias });
+      }
     } else {
       alb.addListener("Studio", { port: 80, protocol: elbv2.ApplicationProtocol.HTTP, defaultAction: elbv2.ListenerAction.forward([studioTg]) });
       alb.addListener("Storefront", { port: 8080, protocol: elbv2.ApplicationProtocol.HTTP, defaultAction: elbv2.ListenerAction.forward([rendererTg]) });
