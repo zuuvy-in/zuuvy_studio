@@ -21,6 +21,14 @@ npm run db:seed               # demo@zuuvy.site / demo12345, site at demo.localh
 npm run dev                   # studio :3000 · sites :3001 · worker · mock Zuuvy :4010
 ```
 
+No Homebrew Postgres? Docker gives you the same database:
+
+```bash
+docker run -d --name zsite-pg -p 54329:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=zsite postgres:16
+docker exec zsite-pg psql -U postgres -c "create role zsite_app login password 'zsite'"
+npm run db:migrate && npm run db:seed
+```
+
 Then:
 
 1. Sign in at http://localhost:3000.

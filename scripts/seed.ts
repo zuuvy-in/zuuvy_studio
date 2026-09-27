@@ -3,12 +3,13 @@
  * Idempotent — re-running leaves an existing demo alone.
  */
 import { closePool, createSite, loadRootEnv, signup, siteUrl, withGlobal, withTenant } from "@zsite/platform";
+import { explainDbError } from "./db-hint";
 
 loadRootEnv();
 const EMAIL = "demo@zuuvy.site";
 const PASSWORD = "demo12345";
 
-const existing = await withGlobal((tx) => tx.one("select 1 from users where email = $1", [EMAIL]));
+const existing = await withGlobal((tx) => tx.one("select 1 from users where email = $1", [EMAIL])).catch(explainDbError);
 if (existing) {
   console.log(`demo account exists — sign in as ${EMAIL} / ${PASSWORD}`);
 } else {
