@@ -3,7 +3,7 @@
 FROM node:22-bookworm-slim AS build
 ARG APP
 WORKDIR /repo
-COPY package.json package-lock.json .npmrc ./
+COPY package.json package-lock.json .npmrc tsconfig.json tsconfig.base.json ./
 COPY apps ./apps
 COPY packages ./packages
 RUN npm ci --no-audit --no-fund
