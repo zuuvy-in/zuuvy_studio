@@ -68,8 +68,12 @@ Secrets Manager and inject it in `infra/lib/services-stack.ts` — not in GitHub
    ```
    This creates the roles and asset buckets CDK deploys through; the deploy
    role only assumes those roles and holds no broad permissions itself.
-4. **Bedrock.** Bedrock console (`ap-south-1`) → Model access: make sure
-   Amazon Nova Pro is available to the account.
+4. **Bedrock.** Nothing to enable: serverless models (Amazon Nova included)
+   switch on for the account the first time they are invoked. To check before
+   the first AI edit, open Amazon Nova Pro in the Bedrock playground in
+   `ap-south-1` and send one message. "Operation not allowed" there means AWS
+   has not opened Bedrock to the account yet (new accounts can be held back,
+   like CloudFront) — open a Support case under Account and billing.
 
 ## Keeping DNS at the registrar (Hostinger)
 

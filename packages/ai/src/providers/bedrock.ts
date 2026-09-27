@@ -69,16 +69,16 @@ function explain(e: unknown, model: string, region: string): never {
     case "CredentialsProviderError":
       throw new AgentError("No AWS credentials found for Bedrock. Set AWS_PROFILE or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (in production, the service's IAM role).");
     case "AccessDeniedException":
-      throw new AgentError(`AWS refused access to ${model} in ${region}. Check the IAM policy allows bedrock:InvokeModel and that the model is enabled in the Bedrock console for this region.`);
+      throw new AgentError(`AWS refused access to ${model} in ${region}. Check the IAM policy allows bedrock:InvokeModel on the model and its inference profile, and that no Service Control Policy denies it.`);
     case "ResourceNotFoundException":
     case "ValidationException": {
       // "Operation not allowed" is not about the request: AWS has not opened
       // Bedrock to this account yet (new accounts are held back, as CloudFront
-      // is) or the model is not enabled. Pointing at the model id sends people
+      // is) or a Service Control Policy denies it. Pointing at the model id sends people
       // hunting in the wrong place.
       if (/operation not allowed/i.test(err.message)) {
         throw new AgentError(
-          `AWS has not allowed this account to use ${model} in ${region} ("${err.message}"). The request itself is fine: enable the model under Bedrock → Model access in ${region}, and if it is already enabled, open an AWS Support case (Account and billing) asking for Bedrock to be enabled on the account.`,
+          `AWS has not allowed this account to use ${model} in ${region} ("${err.message}"). The request itself is fine. Try the model once in the Bedrock playground in ${region} as an account administrator; if that fails the same way, open an AWS Support case (Account and billing) asking for Bedrock to be enabled on the account, and check no Service Control Policy denies it.`,
         );
       }
       const profileHint = /^(apac|us|eu|global)\./.test(model)
