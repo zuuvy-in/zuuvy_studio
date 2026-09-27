@@ -15,6 +15,8 @@ export type DeployConfig = {
   appVersion: string;
   aiModel: string;
   zuuvyApiUrl: string;
+  /** Aurora PostgreSQL engine version; must be one the region offers. */
+  dbEngineVersion: string;
   dbMinAcu: number;
   dbMaxAcu: number;
 };
@@ -40,6 +42,11 @@ export function loadConfig(): DeployConfig {
     appVersion: process.env.APP_VERSION || "local",
     aiModel: process.env.ZSITE_AI_MODEL || "",
     zuuvyApiUrl: process.env.ZUUVY_API_URL || "https://api.zuuvy.in",
+    // AWS retires old minor versions (16.6 was already gone in ap-south-1), so
+    // this is a variable: `aws rds describe-db-engine-versions --engine
+    // aurora-postgresql --query "DBEngineVersions[].EngineVersion"` lists what exists.
+    // Changing it on a running cluster performs an in-place upgrade.
+    dbEngineVersion: process.env.DB_ENGINE_VERSION || "16.11",
     // Aurora Serverless v2 capacity. 0 lets the database pause when idle (a
     // cold start of ~15s on the first request); 0.5 keeps it warm.
     // `||`, not `??`: an unset GitHub variable arrives as "", which must mean the default.

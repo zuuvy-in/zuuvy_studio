@@ -58,15 +58,21 @@ export class BaseStack extends Stack {
     // groups in a cycle, and the database sits in subnets with no internet route.)
     dbSg.addIngressRule(ec2.Peer.ipv4(this.vpc.vpcCidrBlock), ec2.Port.tcp(5432), "Postgres from inside the VPC");
 
+    const engine = rds.DatabaseClusterEngine.auroraPostgres({
+      version: rds.AuroraPostgresEngineVersion.of(cfg.dbEngineVersion, cfg.dbEngineVersion.split(".")[0]!),
+    });
     // TLS is mandatory at the server, not just requested by the client.
     const params = new rds.ParameterGroup(this, "DbParams", {
-      engine: rds.DatabaseClusterEngine.auroraPostgres({ version: rds.AuroraPostgresEngineVersion.VER_16_6 }),
+      engine,
       parameters: { "rds.force_ssl": "1" },
     });
 
     this.db = new rds.DatabaseCluster(this, "Db", {
-      engine: rds.DatabaseClusterEngine.auroraPostgres({ version: rds.AuroraPostgresEngineVersion.VER_16_6 }),
-      credentials: rds.Credentials.fromGeneratedSecret(DB_ADMIN_USER, { secretName: "zsite/db-admin" }),
+      engine,
+      // Secret names are generated, not fixed: a deleted secret keeps its name
+      // reserved for days, and a retained one keeps it for ever, so a fixed name
+      // makes the next create after any rollback fail. Services find them by ARN.
+      credentials: rds.Credentials.fromGeneratedSecret(DB_ADMIN_USER),
       defaultDatabaseName: DB_NAME,
       writer: rds.ClusterInstance.serverlessV2("writer"),
       serverlessV2MinCapacity: cfg.dbMinAcu,
@@ -83,8 +89,7 @@ export class BaseStack extends Stack {
 
     // The application's own login (Row-Level Security binds it; see 0001_init.sql).
     this.appDbSecret = new secrets.Secret(this, "AppDbSecret", {
-      secretName: "zsite/db-app",
-      description: "Password for the zsite_app database role",
+      description: "Zuuvy Sites: password for the zsite_app database role",
       generateSecretString: {
         secretStringTemplate: JSON.stringify({ username: "zsite_app" }),
         generateStringKey: "password",
@@ -96,8 +101,7 @@ export class BaseStack extends Stack {
     // Seals integration credentials at rest (packages/platform/src/secrets.ts).
     // Rotating it means re-sealing stored credentials, so it is never rotated automatically.
     this.appSecrets = new secrets.Secret(this, "AppSecrets", {
-      secretName: "zsite/app",
-      description: "Zuuvy Sites application secrets",
+      description: "Zuuvy Sites application secrets (SECRETS_KEY seals integration credentials)",
       generateSecretString: {
         secretStringTemplate: JSON.stringify({}),
         generateStringKey: "SECRETS_KEY",

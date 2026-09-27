@@ -9,7 +9,7 @@ first run builds everything from nothing.
 
 | Stack | Resources |
 |---|---|
-| `ZsiteBase` | VPC (2 AZs, no NAT), Aurora PostgreSQL 16 Serverless v2 (encrypted, TLS enforced, 7-day backups, deletion protection), Secrets Manager secrets (`zsite/db-admin`, `zsite/db-app`, `zsite/app`), ECS cluster, migration task |
+| `ZsiteBase` | VPC (2 AZs, no NAT), Aurora PostgreSQL 16 Serverless v2 (encrypted, TLS enforced, 7-day backups, deletion protection), Secrets Manager secrets (admin and app database passwords, the credential-sealing key — names generated, find them by the stack's Resources tab), ECS cluster, migration task |
 | `ZsiteServices` | Application Load Balancer, ACM wildcard certificate for `zuuvy.site` + `*.zuuvy.site`, Route 53 records (apex, `*`, `studio`), Fargate services: studio ×1, renderer ×2–6 (CPU autoscaling), worker ×1, CloudWatch log groups, IAM access to Amazon Bedrock |
 
 Rough running cost at the defaults: about $150–200/month (Aurora at 0.5 ACU,
@@ -40,6 +40,7 @@ Optionally add required reviewers to approve each deploy. Then add these
 | `DOMAIN_READY` | *(optional)* `true` | Set once `zuuvy.site`'s nameservers point at the Route 53 zone. Until then (unset) the studio and sites are served on CloudFront `*.cloudfront.net` addresses — see "Before the domain is ready" |
 | `ZSITE_AI_MODEL` | *(optional)* `apac.amazon.nova-pro-v1:0` | Bedrock model for AI edits; empty = that default |
 | `DB_MIN_ACU` | *(optional)* `0.5` | Aurora minimum capacity; `0` pauses when idle |
+| `DB_ENGINE_VERSION` | *(optional)* `16.11` | Aurora PostgreSQL version. AWS retires old minor versions; list what the region offers with `aws rds describe-db-engine-versions --engine aurora-postgresql --region ap-south-1 --query "DBEngineVersions[].EngineVersion"` |
 
 If you later switch AI editing to Claude, put `ANTHROPIC_API_KEY` in AWS
 Secrets Manager and inject it in `infra/lib/services-stack.ts` — not in GitHub.

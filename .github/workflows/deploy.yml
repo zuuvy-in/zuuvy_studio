@@ -79,6 +79,7 @@ jobs:
       DOMAIN_READY: ${{ vars.DOMAIN_READY }}
       ZSITE_AI_MODEL: ${{ vars.ZSITE_AI_MODEL }}
       DB_MIN_ACU: ${{ vars.DB_MIN_ACU }}
+      DB_ENGINE_VERSION: ${{ vars.DB_ENGINE_VERSION }}
       APP_VERSION: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
