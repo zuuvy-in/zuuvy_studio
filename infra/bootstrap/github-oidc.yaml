@@ -23,6 +23,17 @@ Parameters:
     Description: >
       "false" if this account already has the token.actions.githubusercontent.com
       identity provider (IAM → Identity providers); an account can hold only one.
+  GitHubOrgId:
+    Type: String
+    Default: "309228253"
+    Description: >
+      Numeric id of the organisation. Organisations that use GitHub's ID-pinned
+      subject format send repo:<org>@<org id>/<repo>@<repo id>:...; leave blank
+      only if yours sends the plain repo:<org>/<repo>:... form.
+  RepoId:
+    Type: String
+    Default: "1390232775"
+    Description: Numeric id of the repository (same format note as above).
   CdkQualifier:
     Type: String
     Default: hnb659fds
@@ -30,6 +41,9 @@ Parameters:
 
 Conditions:
   MakeProvider: !Equals [!Ref CreateOidcProvider, "true"]
+  PinnedIds: !And
+    - !Not [!Equals [!Ref GitHubOrgId, ""]]
+    - !Not [!Equals [!Ref RepoId, ""]]
 
 Resources:
   GitHubOidcProvider:
@@ -58,8 +72,14 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                # Only jobs that run in the protected environment of this one repository.
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}/${RepoName}:environment:${EnvironmentName}
+                # Only jobs that run in the protected environment of this one repository —
+                # exact values, no wildcards. With ids, the subject names the organisation
+                # and repository by immutable id, so a renamed or re-created repository
+                # of the same name cannot take this role.
+                token.actions.githubusercontent.com:sub: !If
+                  - PinnedIds
+                  - !Sub repo:${GitHubOrg}@${GitHubOrgId}/${RepoName}@${RepoId}:environment:${EnvironmentName}
+                  - !Sub repo:${GitHubOrg}/${RepoName}:environment:${EnvironmentName}
       Policies:
         - PolicyName: deploy
           PolicyDocument:
