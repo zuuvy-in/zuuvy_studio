@@ -51,6 +51,19 @@ export const config = {
   aiProvider: () => (env("ZSITE_AI_PROVIDER", "bedrock") === "anthropic" ? ("anthropic" as const) : ("bedrock" as const)),
   /** Empty = the provider's default model (see @zsite/ai DEFAULT_MODELS). */
   aiModel: () => env("ZSITE_AI_MODEL", ""),
+  /**
+   * Used when the configured model cannot be used at all (not enabled, IAM,
+   * region). Unset = the provider's default model; "none" = no fallback.
+   */
+  aiFallbackModel: (): string | undefined => {
+    const v = env("ZSITE_AI_FALLBACK_MODEL", "");
+    return v === "" ? undefined : v === "none" ? "" : v;
+  },
+  /** Remote MCP servers for the editor: JSON [{name, url, headers?, tools?}] (see @zsite/ai mcp/client). */
+  mcpServers: () => env("ZSITE_MCP_SERVERS", ""),
+  /** Stock photos in the design kit: Unsplash first, else Pexels; neither = no photo search. */
+  unsplashKey: () => env("UNSPLASH_ACCESS_KEY", ""),
+  pexelsKey: () => env("PEXELS_API_KEY", ""),
 };
 
 /**

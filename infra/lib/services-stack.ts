@@ -114,6 +114,11 @@ export class ServicesStack extends Stack {
       ZUUVY_API_URL: cfg.zuuvyApiUrl,
       ZSITE_ALLOW_CUSTOM_ZUUVY_URL: "0",
       ...(cfg.aiModel ? { ZSITE_AI_MODEL: cfg.aiModel } : {}),
+      ...(cfg.aiFallbackModel ? { ZSITE_AI_FALLBACK_MODEL: cfg.aiFallbackModel } : {}),
+      // Design helpers for the editor (MCP): stock photos and any remote MCP servers.
+      ...(cfg.unsplashKey ? { UNSPLASH_ACCESS_KEY: cfg.unsplashKey } : {}),
+      ...(cfg.pexelsKey ? { PEXELS_API_KEY: cfg.pexelsKey } : {}),
+      ...(cfg.mcpServers ? { ZSITE_MCP_SERVERS: cfg.mcpServers } : {}),
       // Pictures: the media library bucket, and the Bedrock image model.
       ASSETS_BUCKET: base.assets.bucketName,
       ASSETS_REGION: this.region,
@@ -137,6 +142,8 @@ export class ServicesStack extends Stack {
       actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
       resources: [
         "arn:aws:bedrock:*::foundation-model/*",
+        // Global inference profiles (global.*) route to the region-less model ARN.
+        "arn:aws:bedrock:::foundation-model/*",
         `arn:aws:bedrock:*:${this.account}:inference-profile/*`,
       ],
     });

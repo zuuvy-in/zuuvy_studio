@@ -15,7 +15,8 @@ import { z } from "zod";
 import { AgentError } from "./errors";
 import { anthropicProvider } from "./providers/anthropic";
 import { type BedrockOptions, bedrockProvider } from "./providers/bedrock";
-import type { Attachment, Provider, Usage } from "./providers/types";
+import { type McpConnection, type McpOptions, connectMcp } from "./mcp/client";
+import type { Attachment, Provider, ProviderResult, Usage } from "./providers/types";
 import { type Proposal, type ToolCapabilities, createSiteTools, outline } from "./tools";
 
 export type SiteContext = {
@@ -44,6 +45,8 @@ export type EditResult = {
   /** Changes to existing data held back for the owner to allow. */
   proposals: Proposal[];
   stopReason: string | null;
+  /** Set when the requested model could not be used and the fallback model did the edit. */
+  fellBack?: string;
 };
 
 export { AgentError };
@@ -53,7 +56,8 @@ export type ProviderName = "bedrock" | "anthropic";
 export const DEFAULT_MODELS: Record<ProviderName, string> = {
   // Cross-region inference profile for Asia Pacific (the Mumbai region routes through it).
   // Override with ZSITE_AI_MODEL: any Bedrock model with tool use, e.g.
-  // "global.anthropic.claude-sonnet-5" (Claude on Bedrock, through the same Converse loop).
+  // "global.anthropic.claude-opus-5" (Claude on Bedrock, through the same Converse loop).
+  // It is also the fallback when a configured model cannot be used.
   bedrock: "apac.amazon.nova-pro-v1:0",
   anthropic: "claude-opus-5",
 };
@@ -119,6 +123,14 @@ export type EditOptions = {
   capabilities?: ToolCapabilities;
   /** The base version's data collections. */
   data?: SiteData;
+  /**
+   * Tried when `model` cannot be used at all (not enabled on the account,
+   * refused by IAM, not in the region). Default: the provider's default model
+   * when a different one was named. "" turns it off.
+   */
+  fallbackModel?: string;
+  /** The design kit and any remote MCP servers; false for none (tests default to none). */
+  mcp?: McpOptions | false;
 };
 
 export function resolveProvider(name: string | undefined): ProviderName {
@@ -127,96 +139,139 @@ export function resolveProvider(name: string | undefined): ProviderName {
 
 export async function editSite(opts: EditOptions): Promise<EditResult> {
   const provider = opts.provider ?? resolveProvider(process.env.ZSITE_AI_PROVIDER);
-  const model = opts.model || DEFAULT_MODELS[provider];
+  let model = opts.model || DEFAULT_MODELS[provider];
+  const fallback = opts.fallbackModel ?? (model !== DEFAULT_MODELS[provider] ? DEFAULT_MODELS[provider] : "");
   const run = opts.runner ?? (provider === "anthropic" ? anthropicProvider() : bedrockProvider(opts.bedrock));
   // Collections belong to portfolios (and to any site already showing one, so its data is not stranded).
   const usesCollections = opts.tree.pages.some((p) => p.sections.some((s) => s.type === "collection"));
   const dataTools = opts.context.siteKind === "portfolio" || usesCollections;
-  const { tools, state } = createSiteTools(opts.tree, { ...opts.capabilities, dataTools }, opts.data ?? {});
-  const ctx = opts.context;
+  const { tools: siteTools, state } = createSiteTools(opts.tree, { ...opts.capabilities, dataTools }, opts.data ?? {});
+  // Runners supplied by tests get no MCP unless they ask for it.
+  const mcp: McpConnection | null = opts.mcp === false || (opts.mcp === undefined && opts.runner) ? null : await connectMcp(opts.mcp || {});
+  const tools = [...siteTools, ...(mcp?.tools ?? [])];
+  try {
+    return await edit();
+  } finally {
+    await mcp?.close();
+  }
 
-  const facts = [
-    `Business: ${ctx.businessName}`,
-    `Kind of site: ${ctx.siteKind}`,
-    ctx.catalogueSource
-      ? `Catalogue: ${ctx.productCount} products from ${ctx.catalogueSource}. Categories: ${
-          ctx.categories.map((c) => `${c.category} (${c.count})`).join(", ") || "none"
-        }`
-      : "Catalogue: none connected (product grids will be empty until one is).",
-    ctx.media?.length
-      ? `Media library (use these URLs as they are):\n${ctx.media.map((m) => `- ${m.url} — ${m.alt || "(no description)"} [${m.kind}]`).join("\n")}`
-      : "Media library: empty.",
-    dataTools
-      ? "Data collections: available (portfolio content lives there)."
-      : "Data collections: not used on this kind of site — build with ordinary blocks, never collection sections.",
-    opts.brand ? `Brand kit:\n${opts.brand}` : "Brand kit: none — choose colours, fonts and imagery that fit the business.",
-    opts.attachments?.length
-      ? `Attached files (read them; they are the owner's material — use their facts, products, wording and look where the request asks): ${opts.attachments.map((a) => a.name).join(", ")}`
-      : "",
-    `Picture generation: ${opts.capabilities?.generateImage ? `available (generate_image, up to ${opts.capabilities.maxImages ?? 4} this request)` : "not available — use the media library or leave image fields out"}.`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  async function edit(): Promise<EditResult> {
+    const ctx = opts.context;
 
-  const user = `${facts}
+    const facts = [
+      `Business: ${ctx.businessName}`,
+      `Kind of site: ${ctx.siteKind}`,
+      ctx.catalogueSource
+        ? `Catalogue: ${ctx.productCount} products from ${ctx.catalogueSource}. Categories: ${
+            ctx.categories.map((c) => `${c.category} (${c.count})`).join(", ") || "none"
+          }`
+        : "Catalogue: none connected (product grids will be empty until one is).",
+      ctx.media?.length
+        ? `Media library (use these URLs as they are):\n${ctx.media.map((m) => `- ${m.url} — ${m.alt || "(no description)"} [${m.kind}]`).join("\n")}`
+        : "Media library: empty.",
+      dataTools
+        ? "Data collections: available (portfolio content lives there)."
+        : "Data collections: not used on this kind of site — build with ordinary blocks, never collection sections.",
+      opts.brand ? `Brand kit:\n${opts.brand}` : "Brand kit: none — choose colours, fonts and imagery that fit the business.",
+      opts.attachments?.length
+        ? `Attached files (read them; they are the owner's material — use their facts, products, wording and look where the request asks): ${opts.attachments.map((a) => a.name).join(", ")}`
+        : "",
+      `Picture generation: ${opts.capabilities?.generateImage ? `available (generate_image, up to ${opts.capabilities.maxImages ?? 4} this request)` : "not available — use the media library or leave image fields out"}.`,
+      mcp?.summary.length
+        ? `Design helpers (MCP tools — call them before choosing colours, fonts, layout or photos when the request is about the look):\n${mcp.summary.map((l) => `- ${l}`).join("\n")}${
+            tools.some((t) => t.name === "design__search_photos")
+              ? "\nStock photos: design__search_photos returns real photos whose https URLs go straight into image fields; prefer them to generated pictures for real places, people and food."
+              : ""
+          }`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
 
-Current site outline:
-${outline(opts.tree)}
+    const user = `${facts}
 
-Current site tree:
-${JSON.stringify(opts.tree)}
+  Current site outline:
+  ${outline(opts.tree)}
 
-${dataTools ? `Current data collections:\n${JSON.stringify(opts.data ?? {})}` : ""}
+  Current site tree:
+  ${JSON.stringify(opts.tree)}
 
-Request:
-${opts.prompt}`;
+  ${dataTools ? `Current data collections:\n${JSON.stringify(opts.data ?? {})}` : ""}
 
-  let result = await run({ system: SYSTEM, user, tools, model, maxIterations: opts.maxIterations ?? 30, attachments: opts.attachments });
+  Request:
+  ${opts.prompt}`;
 
-  // A model sometimes describes edits it never made (no tool call succeeded) —
-  // typically after a tool failed. Ask once more, plainly, before giving up.
-  const nothingDone = () => !state.operations.length && !state.dataOperations.length && !state.proposals.length;
-  if (!result.refused && nothingDone() && result.finalText) {
-    const retry = await run({
-      system: SYSTEM,
-      user: `${user}\n\nYour previous attempt replied "${result.finalText.slice(0, 400)}" but made no change: no tool call succeeded, so nothing was saved. Make the requested changes now by calling the tools${state.imageError ? " (picture generation is unavailable — skip pictures, do everything else)" : ""}.`,
-      tools,
-      model,
-      maxIterations: opts.maxIterations ?? 30,
-      attachments: opts.attachments,
-    });
-    const u = result.usage;
-    retry.usage = {
-      input_tokens: u.input_tokens + retry.usage.input_tokens,
-      output_tokens: u.output_tokens + retry.usage.output_tokens,
-      cache_read_input_tokens: u.cache_read_input_tokens + retry.usage.cache_read_input_tokens,
-      requests: u.requests + retry.usage.requests,
+    // A model the account cannot use fails before it edits anything, so the
+    // same request can go to the fallback model with nothing to undo.
+    let fellBack = "";
+    let spent: Usage | undefined;
+    const attempt = async (u: string): Promise<ProviderResult> => {
+      try {
+        return await run({ system: SYSTEM, user: u, tools, model, maxIterations: opts.maxIterations ?? 30, attachments: opts.attachments });
+      } catch (e) {
+        const unusable = e instanceof AgentError && e.unavailable && !state.operations.length && !state.dataOperations.length;
+        if (!unusable || !fallback || fallback === model) throw e;
+        console.warn(`AI model ${model} unavailable, using ${fallback}: ${(e as Error).message}`);
+        fellBack = `${model} could not be used (${(e as Error).message.slice(0, 160)}), so ${fallback} made this edit.`;
+        spent = (e as AgentError).usage;
+        model = fallback;
+        return run({ system: SYSTEM, user: u, tools, model, maxIterations: opts.maxIterations ?? 30, attachments: opts.attachments });
+      }
     };
-    result = retry;
-  }
 
-  const pictures = state.imageError ? ` Picture generation failed: ${state.imageError}` : "";
-  const fail = (message: string, outcome: "refused" | "no_change") =>
-    Object.assign(new AgentError(`${message}${pictures}`), { usage: result.usage, outcome, images: state.images });
-  if (result.refused) throw fail("The AI declined this request. Try rephrasing it.", "refused");
-  if (nothingDone()) {
-    throw fail(result.finalText ? `The AI made no changes: ${result.finalText.slice(0, 300)}` : "The AI made no changes.", "no_change");
+    let result = await attempt(user);
+
+    // A model sometimes describes edits it never made (no tool call succeeded) —
+    // typically after a tool failed. Ask once more, plainly, before giving up.
+    const nothingDone = () => !state.operations.length && !state.dataOperations.length && !state.proposals.length;
+    if (!result.refused && nothingDone() && result.finalText) {
+      const retry = await attempt(
+        `${user}\n\nYour previous attempt replied "${result.finalText.slice(0, 400)}" but made no change: no tool call succeeded, so nothing was saved. Make the requested changes now by calling the tools${state.imageError ? " (picture generation is unavailable — skip pictures, do everything else)" : ""}.`,
+      );
+      const u = result.usage;
+      retry.usage = {
+        input_tokens: u.input_tokens + retry.usage.input_tokens,
+        output_tokens: u.output_tokens + retry.usage.output_tokens,
+        cache_read_input_tokens: u.cache_read_input_tokens + retry.usage.cache_read_input_tokens,
+        requests: u.requests + retry.usage.requests,
+      };
+      result = retry;
+    }
+
+    if (spent) {
+      result.usage = {
+        input_tokens: result.usage.input_tokens + spent.input_tokens,
+        output_tokens: result.usage.output_tokens + spent.output_tokens,
+        cache_read_input_tokens: result.usage.cache_read_input_tokens + spent.cache_read_input_tokens,
+        requests: result.usage.requests + spent.requests,
+      };
+    }
+
+    const pictures = state.imageError ? ` Picture generation failed: ${state.imageError}` : "";
+    const fail = (message: string, outcome: "refused" | "no_change") =>
+      Object.assign(new AgentError(`${message}${pictures}`), { usage: result.usage, outcome, images: state.images });
+    if (result.refused) throw fail("The AI declined this request. Try rephrasing it.", "refused");
+    if (nothingDone()) {
+      throw fail(result.finalText ? `The AI made no changes: ${result.finalText.slice(0, 300)}` : "The AI made no changes.", "no_change");
+    }
+    return {
+      tree: state.tree,
+      operations: state.operations,
+      summary:
+        (result.finalText.slice(0, 280) || `${state.operations.length + state.dataOperations.length} changes`) +
+        (state.imageError ? " (pictures could not be generated)" : "") +
+        (fellBack ? ` (made with ${model}; the configured model was unavailable)` : ""),
+      model: result.model,
+      provider,
+      usage: result.usage,
+      images: state.images,
+      data: state.data,
+      dataOperations: state.dataOperations,
+      proposals: state.proposals,
+      stopReason: result.stopReason,
+      fellBack: fellBack || undefined,
+    };
   }
-  return {
-    tree: state.tree,
-    operations: state.operations,
-    summary:
-      (result.finalText.slice(0, 280) || `${state.operations.length + state.dataOperations.length} changes`) +
-      (state.imageError ? " (pictures could not be generated)" : ""),
-    model: result.model,
-    provider,
-    usage: result.usage,
-    images: state.images,
-    data: state.data,
-    dataOperations: state.dataOperations,
-    proposals: state.proposals,
-    stopReason: result.stopReason,
-  };
 }
 
 /** Whether the configured provider has what it needs to be tried at all. */

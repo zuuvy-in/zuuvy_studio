@@ -93,6 +93,8 @@ export type SiteTool = {
   name: string;
   description: string;
   inputSchema: z.ZodType;
+  /** Sent to the model instead of `inputSchema`'s JSON Schema — for tools defined elsewhere (MCP servers), which validate their own input. */
+  jsonSchema?: Record<string, unknown>;
   run: (input: unknown) => string | Promise<string>;
 };
 

@@ -18,6 +18,10 @@ export type DeployConfig = {
   studioHost: string;
   appVersion: string;
   aiModel: string;
+  aiFallbackModel: string;
+  unsplashKey: string;
+  pexelsKey: string;
+  mcpServers: string;
   zuuvyApiUrl: string;
   /** Aurora PostgreSQL engine version; must be one the region offers. */
   dbEngineVersion: string;
@@ -58,6 +62,13 @@ export function loadConfig(): DeployConfig {
     studioHost: `${process.env.STUDIO_SUBDOMAIN || "studio"}.${domain}`,
     appVersion: process.env.APP_VERSION || "local",
     aiModel: process.env.ZSITE_AI_MODEL || "",
+    // Used when aiModel cannot be (not enabled, IAM); empty = the provider default, "none" = off.
+    aiFallbackModel: process.env.ZSITE_AI_FALLBACK_MODEL || "",
+    // The editor's design helpers: stock photo keys and remote MCP servers (JSON). From
+    // GitHub secrets; they land in the task definition's environment.
+    unsplashKey: process.env.UNSPLASH_ACCESS_KEY || "",
+    pexelsKey: process.env.PEXELS_API_KEY || "",
+    mcpServers: process.env.ZSITE_MCP_SERVERS || "",
     zuuvyApiUrl: process.env.ZUUVY_API_URL || "https://api.zuuvy.in",
     // AWS retires old minor versions (16.6 was already gone in ap-south-1), so
     // this is a variable: `aws rds describe-db-engine-versions --engine

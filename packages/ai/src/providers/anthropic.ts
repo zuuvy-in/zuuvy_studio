@@ -5,7 +5,9 @@
  * other provider.
  */
 import Anthropic from "@anthropic-ai/sdk";
+import { betaTool } from "@anthropic-ai/sdk/helpers/beta/json-schema";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { toolJsonSchema } from "./bedrock";
 import { AgentError } from "../errors";
 import { type Provider, emptyUsage, isImageFormat } from "./types";
 
@@ -30,7 +32,9 @@ export function anthropicProvider(opts: { client?: Anthropic } = {}): Provider {
       fallbacks: "default",
       system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
       tools: tools.map((t) =>
-        betaZodTool({ name: t.name, description: t.description, inputSchema: t.inputSchema, run: (input) => t.run(input) }),
+        t.jsonSchema
+          ? betaTool({ name: t.name, description: t.description, inputSchema: toolJsonSchema(t) as { type: "object" }, run: (input) => t.run(input) })
+          : betaZodTool({ name: t.name, description: t.description, inputSchema: t.inputSchema, run: (input) => t.run(input) }),
       ),
       messages: [{ role: "user", content: [...content, { type: "text", text: user }] }],
     });
@@ -49,6 +53,9 @@ export function anthropicProvider(opts: { client?: Anthropic } = {}): Provider {
       if (e instanceof AgentError) throw Object.assign(e, { usage: { ...usage } });
       if (e instanceof Anthropic.AuthenticationError) throw new AgentError("The AI service rejected the API key. Set ANTHROPIC_API_KEY.");
       if (e instanceof Anthropic.RateLimitError) throw new AgentError("The AI service is busy. Try again in a minute.");
+      if (e instanceof Anthropic.NotFoundError || e instanceof Anthropic.PermissionDeniedError) {
+        throw Object.assign(new AgentError(`${model} is not available to this API key: ${e.message}`), { unavailable: true, usage: { ...usage } });
+      }
       if (e instanceof Anthropic.APIError) throw new AgentError(`The AI service failed (${e.status}): ${e.message}`);
       throw e;
     }

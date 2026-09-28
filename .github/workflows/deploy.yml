@@ -81,6 +81,11 @@ jobs:
       DNS_PROVIDER: ${{ vars.DNS_PROVIDER }}
       CERTIFICATE_ARN: ${{ vars.CERTIFICATE_ARN }}
       ZSITE_AI_MODEL: ${{ vars.ZSITE_AI_MODEL }}
+      ZSITE_AI_FALLBACK_MODEL: ${{ vars.ZSITE_AI_FALLBACK_MODEL }}
+      # The editor's design kit (stock photos) and remote MCP servers — secrets, since they carry keys.
+      UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      ZSITE_MCP_SERVERS: ${{ secrets.ZSITE_MCP_SERVERS }}
       DB_MIN_ACU: ${{ vars.DB_MIN_ACU }}
       DB_ENGINE_VERSION: ${{ vars.DB_ENGINE_VERSION }}
       # "true" once SES has the domain's DKIM records and production access.

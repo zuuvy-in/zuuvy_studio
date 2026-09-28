@@ -9,4 +9,6 @@ export class AgentError extends Error {
   outcome?: "refused" | "no_change";
   /** Pictures already generated (and paid for) before the failure. */
   images?: number;
+  /** The model itself could not be used (not enabled, not in this region, refused by IAM) — another model may work. */
+  unavailable?: boolean;
 }

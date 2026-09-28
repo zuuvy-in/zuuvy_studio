@@ -41,6 +41,9 @@ Optionally add required reviewers to approve each deploy. Then add these
 | `CERTIFICATE_ARN` | *(optional)* `arn:aws:acm:ap-south-1:…` | An issued ACM certificate for `zuuvy.site` + `*.zuuvy.site` |
 | `DOMAIN_READY` | *(optional)* `true` | Set once `zuuvy.site`'s nameservers point at the Route 53 zone. Until then (unset) the studio and sites are served on CloudFront `*.cloudfront.net` addresses — see "Before the domain is ready" |
 | `ZSITE_AI_MODEL` | *(optional)* `apac.amazon.nova-pro-v1:0` | Bedrock model for AI edits; empty = that default. Any Bedrock model with tool use works, e.g. `global.anthropic.claude-sonnet-5` |
+| `ZSITE_AI_FALLBACK_MODEL` | *(optional)* | Model used when `ZSITE_AI_MODEL` cannot be (not enabled, IAM, region); empty = `apac.amazon.nova-pro-v1:0`, `none` = off |
+| `UNSPLASH_ACCESS_KEY` / `PEXELS_API_KEY` | *(optional, secrets)* | Stock-photo search in the editor's design kit (Unsplash first) |
+| `ZSITE_MCP_SERVERS` | *(optional, secret)* | Remote MCP servers for the editor, JSON `[{"name","url","headers"?,"tools"?}]` (streamable HTTP) |
 | `ZSITE_IMAGE_MODEL` | *(optional)* `global.amazon.nova-2-omni-v1:0` | Bedrock image model for AI pictures (Nova Canvas is Legacy) |
 | `ZSITE_IMAGE_REGION` | *(optional)* `ap-south-1` | Region the image model is called from; empty = the stack's |
 | `EMAIL_ENABLED` | *(optional)* `true` | Send email through SES. Leave unset until the DKIM records are in and SES production access is granted — see "Email" |

@@ -59,3 +59,9 @@ npm run admin:create   # platform superadmin (rishav@zuuvy.in by default)
   superadmin in the database.
 - **Email is an outbox job** (`email.send`), queued in the transaction that
   caused it; `EMAIL_ENABLED=1` or it is only logged.
+- **MCP servers are editor tools** (`packages/ai/src/mcp/`): the design kit
+  in-process, remote ones from `ZSITE_MCP_SERVERS` (deployment config, not user
+  input). A server that fails is skipped, never fatal. Tests that pass a
+  `runner` get no MCP unless they set `mcp`.
+- **A model that cannot be used falls back** (`ZSITE_AI_FALLBACK_MODEL`), only
+  when nothing was edited yet; errors mark this with `AgentError.unavailable`.

@@ -211,3 +211,30 @@ gateway via split settlement, flat fee) · WhatsApp via Twilio with template
 approval sync · message templates · running custom React code (source export covers content and layout) · plugin SDK and
 marketplace · runtime 2 and AI-assisted upgrades · "Sign in with Zuuvy" ·
 cart with several products · the Zuuvy-side implementation of the contract.
+
+## Design helpers (MCP)
+
+The editor's tools are the site tools plus whatever MCP servers are connected
+(`packages/ai/src/mcp/`). Each MCP tool becomes a `SiteTool` named
+`<server>__<tool>` carrying the server's JSON Schema, so both providers send it
+unchanged and a tool's own error goes back to the model like any other.
+
+- **Design kit** (`mcp/design-kit.ts`), always on, connected in-process:
+  `palette` (the theme's six colours from one brand colour, contrast-checked),
+  `check_contrast`, `font_pairings` (from the tree's font list),
+  `style_recipe` (fonts, radius, motion, imagery, copy and a section order in
+  this builder's section types), and `search_photos` (Unsplash or Pexels, only
+  with a key) whose https URLs go straight into image fields. Its answers are
+  suggestions: `set_theme` and `applyBrand` still keep what the brand kit fixes.
+  `npm run mcp:design-kit -w @zsite/ai` serves it over stdio for other clients.
+- **Remote servers** from `ZSITE_MCP_SERVERS` (streamable HTTP only). The URLs
+  come from the deployment, never from users or the model. A server that is
+  down is skipped with a warning; an edit never fails for an optional helper.
+
+## Model fallback
+
+A model the account cannot use (Bedrock AccessDenied / ResourceNotFound /
+Validation, Anthropic 403/404) fails before it edits anything, so `editSite`
+reruns the request on `ZSITE_AI_FALLBACK_MODEL` (default: the provider's
+default model) and says so in the version summary. Usage from both attempts is
+recorded.

@@ -43,12 +43,18 @@ export type BedrockOptions = {
 
 const MAX_MALFORMED_RETRIES = 2;
 
+/** A tool's JSON Schema as the model should see it. `$schema` is dropped: it tells the model nothing and not every model accepts it. */
+export function toolJsonSchema(t: SiteTool): Record<string, unknown> {
+  const { $schema: _, ...schema } = t.jsonSchema ?? (z.toJSONSchema(t.inputSchema, { io: "input", unrepresentable: "any" }) as Record<string, unknown>);
+  return { type: "object", ...schema };
+}
+
 export function toBedrockTools(tools: SiteTool[]): Tool[] {
   return tools.map((t) => ({
     toolSpec: {
       name: t.name,
       description: t.description,
-      inputSchema: { json: z.toJSONSchema(t.inputSchema, { io: "input", unrepresentable: "any" }) as never },
+      inputSchema: { json: toolJsonSchema(t) as never },
     },
   }));
 }
@@ -64,12 +70,33 @@ async function runTool(tools: SiteTool[], block: NonNullable<ContentBlock.ToolUs
 }
 
 function explain(e: unknown, model: string, region: string): never {
+  try {
+    explainOnly(e, model, region);
+  } catch (out) {
+    // These say the model cannot be used here at all — worth trying another.
+    const name = (e as Error)?.name;
+    if (out instanceof AgentError && (name === "AccessDeniedException" || name === "ResourceNotFoundException" || name === "ValidationException")) {
+      out.unavailable = true;
+    }
+    throw out;
+  }
+}
+
+function explainOnly(e: unknown, model: string, region: string): never {
   const err = e as Error & { name?: string };
   switch (err.name) {
     case "CredentialsProviderError":
       throw new AgentError("No AWS credentials found for Bedrock. Set AWS_PROFILE or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (in production, the service's IAM role).");
     case "AccessDeniedException":
-      throw new AgentError(`AWS refused access to ${model} in ${region}. Check the IAM policy allows bedrock:InvokeModel on the model and its inference profile, and that no Service Control Policy denies it.`);
+      if (/marketplace/i.test(err.message)) {
+        throw new AgentError(
+          `${model} has not been enabled on this AWS account yet. Open it once in the Bedrock playground (${region}) as an administrator — that accepts its AWS Marketplace terms for the whole account — then try again.`,
+        );
+      }
+      if (/use case|use-case|form/i.test(err.message)) {
+        throw new AgentError(`${model} needs Anthropic's one-time use-case form: open the model in the Bedrock console (${region}) and submit it, then try again.`);
+      }
+      throw new AgentError(`AWS refused access to ${model} in ${region}: ${err.message}`);
     case "ResourceNotFoundException":
     case "ValidationException": {
       // "Operation not allowed" is not about the request: AWS has not opened
