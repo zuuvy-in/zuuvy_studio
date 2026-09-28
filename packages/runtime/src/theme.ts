@@ -38,6 +38,11 @@ export function themeStyle(theme: Theme): CSSProperties {
     "--zs-surface": c.surface,
     "--zs-text": c.text,
     "--zs-muted": c.muted,
+    // Copies a section can invert against: its own --zs-primary may be redefined.
+    "--zs-brand": c.primary,
+    "--zs-brand-ink": inkFor(c.primary),
+    "--zs-page-bg": c.background,
+    "--zs-page-text": c.text,
     "--zs-radius": RADIUS[theme.radius],
     "--zs-radius-card": theme.radius === "full" ? "24px" : RADIUS[theme.radius],
     "--zs-font-heading": `"${theme.fonts.heading}", ui-sans-serif, system-ui, sans-serif`,

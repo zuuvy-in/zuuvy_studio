@@ -40,13 +40,22 @@ export function ProductForm({ product }: { product?: Product }) {
         <label className="flex items-center gap-2 self-center text-sm text-slate-700">
           <input type="checkbox" name="active" value="1" defaultChecked={product?.active ?? true} /> On sale
         </label>
-        <div>
-          <label className="label" htmlFor="photo">Photo</label>
-          <input id="photo" type="file" name="photo" accept="image/jpeg,image/png,image/webp" className="block w-full text-sm" />
+        <div className="sm:col-span-2">
+          <label className="label" htmlFor="photos">Photos <span className="font-normal text-slate-400">(choose several at once — up to 12 in all)</span></label>
+          {product && product.images.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {product.images.map((src, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={src + i} src={src} alt="" title={i === 0 ? "Main picture" : `Picture ${i + 1}`} className={`h-16 w-16 rounded-md object-cover ring-1 ${i === 0 ? "ring-brand-500" : "ring-slate-200"}`} />
+              ))}
+            </div>
+          )}
+          <input id="photos" type="file" name="photos" multiple accept="image/jpeg,image/png,image/webp" className="block w-full text-sm" />
         </div>
-        <div>
-          <label className="label" htmlFor="images">Picture URLs <span className="font-normal text-slate-400">(one per line)</span></label>
-          <textarea id="images" name="images" rows={2} defaultValue={product?.images.join("\n")} className="field font-mono text-xs" />
+        <div className="sm:col-span-2">
+          <label className="label" htmlFor="images">Picture order <span className="font-normal text-slate-400">(one address per line; the first is the main picture — reorder or delete lines to change them)</span></label>
+          <textarea id="images" name="images" rows={3} defaultValue={product?.images.join("\n")} className="field font-mono text-xs" />
+          {product?.group_id && <p className="help">This product is a variant in a group; the group&apos;s own photos are shown after these.</p>}
         </div>
         <div className="sm:col-span-2">
           <SubmitButton pending="Saving…">{product ? "Save product" : "Add product"}</SubmitButton>

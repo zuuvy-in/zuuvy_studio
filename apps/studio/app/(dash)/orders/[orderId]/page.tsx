@@ -31,12 +31,39 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
                 {order.lines.map((l) => (
                   <tr key={l.productId}>
                     <td className="px-5 py-3">
-                      <p className="font-medium">{l.name}</p>
+                      <p className="font-medium">{l.name}{l.variant && <span className="font-normal text-slate-500"> · {l.variant}</span>}</p>
                       <p className="text-xs text-slate-500">{l.quantity} × {inr(l.unitPrice)}</p>
                     </td>
                     <td className="px-5 py-3 text-right font-medium">{inr(l.lineTotal)}</td>
                   </tr>
                 ))}
+                {(order.discount > 0 || order.adjustments.length > 0) && (
+                  <tr>
+                    <td className="px-5 py-2 text-slate-600">Subtotal</td>
+                    <td className="px-5 py-2 text-right">{inr(order.subtotal)}</td>
+                  </tr>
+                )}
+                {order.discounts.map((d) => (
+                  <tr key={d.id}>
+                    <td className="px-5 py-2 text-emerald-700">{d.name}{d.code && <code className="ml-1 rounded bg-slate-100 px-1 font-mono text-xs">{d.code}</code>}</td>
+                    <td className="px-5 py-2 text-right text-emerald-700">−{inr(d.amount)}</td>
+                  </tr>
+                ))}
+                {order.adjustments.map((a, i) => (
+                  <tr key={i}>
+                    <td className="px-5 py-2 text-slate-600">{a.label} <span className="text-xs text-slate-400">({a.plugin})</span></td>
+                    <td className="px-5 py-2 text-right">{a.amount < 0 ? `−${inr(-a.amount)}` : inr(a.amount)}</td>
+                  </tr>
+                ))}
+                {Object.keys(order.extra).length > 0 && (
+                  <tr>
+                    <td colSpan={2} className="px-5 py-2 text-xs text-slate-600">
+                      {Object.entries(order.extra).map(([k, v]) => (
+                        <span key={k} className="mr-3"><strong className="font-medium">{k}:</strong> {v === true ? "yes" : v === false ? "no" : v}</span>
+                      ))}
+                    </td>
+                  </tr>
+                )}
                 <tr className="bg-slate-50">
                   <td className="px-5 py-3 font-semibold">Total</td>
                   <td className="px-5 py-3 text-right font-semibold">{inr(order.total)}</td>

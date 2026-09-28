@@ -118,7 +118,7 @@ function clean(input: ProductInput) {
   if (mrp !== null && price !== null && mrp < price) throw new UserError("The MRP cannot be below the price.");
   const stock = input.stock === null || input.stock === undefined || Number.isNaN(input.stock) ? null : input.stock;
   if (stock !== null && (stock < 0 || stock > 10_000_000)) throw new UserError("Stock is not a sensible number.");
-  const images = (input.images ?? []).filter((u) => /^https:\/\//.test(u)).slice(0, 8);
+  const images = (input.images ?? []).filter((u) => /^https:\/\//.test(u)).slice(0, 12);
   return {
     name,
     description: (input.description ?? "").trim().slice(0, 4000),

@@ -17,9 +17,11 @@ export function proxy(request: NextRequest) {
   if (site === null) return NextResponse.next();
   const url = request.nextUrl.clone();
   url.searchParams.delete("site");
-  // Relative, for the same reason as the studio's logout: behind the balancer the
-  // request's own host is the container's, not the one the visitor typed.
-  const res = new NextResponse(null, { status: 303, headers: { Location: `${url.pathname}${url.search}` } });
+  // Absolute, built from the host the visitor used: behind the balancer the request's own
+  // URL names the container, and Next refuses a relative Location from the proxy.
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  const proto = request.headers.get("x-forwarded-proto") ?? request.nextUrl.protocol.replace(":", "");
+  const res = NextResponse.redirect(host ? `${proto}://${host}${url.pathname}${url.search}` : url, 303);
   if (/^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/.test(site)) {
     res.cookies.set(SITE_COOKIE, site, {
       httpOnly: true,

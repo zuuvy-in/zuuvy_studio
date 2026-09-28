@@ -14,6 +14,9 @@ const ITEMS: Item[] = [
   // Only a business with a store has anything to sell or deliver.
   { href: "/products", label: "Products", icon: "box", when: "commerce" },
   { href: "/orders", label: "Orders", icon: "cart", when: "commerce" },
+  { href: "/discounts", label: "Discounts", icon: "tag", when: "commerce" },
+  { href: "/customers", label: "Customers", icon: "users", when: "commerce" },
+  { href: "/plugins", label: "Plugins", icon: "plug", when: "commerce" },
   { href: "/usage", label: "AI usage", icon: "sparkles" },
   { href: "/settings", label: "Settings", icon: "settings" },
   { href: "/admin", label: "Platform admin", icon: "shield", when: "admin" },

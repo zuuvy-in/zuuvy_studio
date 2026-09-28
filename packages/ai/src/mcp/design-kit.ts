@@ -15,6 +15,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { FONTS } from "@zsite/core";
 import { z } from "zod";
+import { isIconName, searchIcons } from "../icons";
+import { SKILLS, SKILL_NAMES } from "../skills";
 
 export type DesignKitOptions = {
   unsplashKey?: string;
@@ -305,6 +307,54 @@ export function createDesignKitServer(opts: DesignKitOptions = {}): McpServer {
     },
     async ({ kind, mood }) => json({ ...MOODS[mood], sections: LAYOUTS[kind] }),
   );
+
+  server.registerTool(
+    "search_icons",
+    {
+      description:
+        "Find icons for features, steps, stats, bullets and marquee separators. Returns Lucide icon names to put in `icon` fields exactly as given. Search in plain words about the meaning: \"fast delivery\", \"warranty\", \"cake\", \"secure payment\".",
+      inputSchema: {
+        query: z.string().min(2).max(80),
+        limit: z.number().int().min(1).max(30).default(12),
+      },
+    },
+    async ({ query, limit }) => {
+      const local = searchIcons(query, limit);
+      // Iconify's search knows each icon's tags, so it finds meanings a name misses. Fixed host; only Lucide names that exist here are kept.
+      let remote: string[] = [];
+      try {
+        const url = new URL("https://api.iconify.design/search");
+        url.searchParams.set("query", query);
+        url.searchParams.set("prefix", "lucide");
+        url.searchParams.set("limit", String(Math.max(limit, 32)));
+        const res = await f(url, { signal: AbortSignal.timeout(2500) });
+        if (res.ok) {
+          const body = (await res.json()) as { icons?: string[] };
+          remote = (body.icons ?? []).map((i) => i.replace(/^lucide:/, "")).filter(isIconName);
+        }
+      } catch {
+        /* offline: the local search stands alone */
+      }
+      const icons = [...new Set([...local.slice(0, 4), ...remote, ...local])].slice(0, limit);
+      return json({ icons, hint: icons.length ? "Use one of these names in an icon field." : "Nothing matched; try a simpler word (truck, star, heart, shield)." });
+    },
+  );
+
+  server.registerTool(
+    "skill",
+    {
+      description: `A design skill to follow: ${SKILL_NAMES.map((n) => `${n} (${SKILLS[n].summary})`).join("; ")}.`,
+      inputSchema: { name: z.enum(SKILL_NAMES as [string, ...string[]]) },
+    },
+    async ({ name }) => ({ content: [{ type: "text" as const, text: SKILLS[name as keyof typeof SKILLS].body }] }),
+  );
+
+  // The same skills as MCP prompts, for clients that offer prompts to their users.
+  for (const name of SKILL_NAMES) {
+    server.registerPrompt(name, { title: SKILLS[name].title, description: SKILLS[name].summary }, () => ({
+      messages: [{ role: "user" as const, content: { type: "text" as const, text: SKILLS[name].body } }],
+    }));
+  }
 
   if (photosAvailable(opts)) {
     server.registerTool(

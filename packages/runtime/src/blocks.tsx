@@ -3,9 +3,10 @@
  * published site ships HTML and CSS, no JavaScript, which is what makes it
  * fast on a cheap phone on a slow connection.
  */
-import type { BlockProps, BlockType, Link as LinkT } from "@zsite/core";
+import type { BlockProps, BlockType, Link as LinkT, SectionStyle } from "@zsite/core";
 import type { ReactNode } from "react";
-import type { RenderContext } from "./context";
+import type { ProductView, RenderContext } from "./context";
+import { SiteIcon } from "./icons";
 
 type P<T extends BlockType> = { props: BlockProps<T>; ctx: RenderContext; id: string };
 
@@ -70,39 +71,95 @@ function Heading({ heading, subheading, center }: { heading?: string; subheading
   );
 }
 
-function Hero({ props, ctx, id }: P<"hero">) {
+/** Paint `highlight` (words from the heading) in the brand gradient. */
+function Highlighted({ text, highlight }: { text: string; highlight?: string }) {
+  const at = highlight ? text.indexOf(highlight) : -1;
+  if (!highlight || at < 0) return <>{text}</>;
   return (
-    <section id={id} className={`zs-hero zs-hero-${props.align} ${props.image ? "zs-hero-image" : ""}`}>
-      <div className="zs-container zs-hero-inner">
-        <div className="zs-hero-copy">
-          {props.eyebrow && <p className="zs-eyebrow">{props.eyebrow}</p>}
-          <h1>{props.heading}</h1>
-          {props.subheading && <p className="zs-lede">{props.subheading}</p>}
-          {(props.primaryCta || props.secondaryCta) && (
-            <div className="zs-actions">
-              {props.primaryCta && <A link={props.primaryCta} ctx={ctx} className="zs-btn zs-btn-primary" />}
-              {props.secondaryCta && <A link={props.secondaryCta} ctx={ctx} className="zs-btn zs-btn-ghost" />}
-            </div>
-          )}
+    <>
+      {text.slice(0, at)}
+      <span className="zs-gradient-text">{highlight}</span>
+      {text.slice(at + highlight.length)}
+    </>
+  );
+}
+
+function Hero({ props, ctx, id }: P<"hero">) {
+  const layout = props.layout ?? "classic";
+  const words = props.rotating?.filter(Boolean) ?? [];
+  const copy = (
+    <div className="zs-hero-copy">
+      {props.eyebrow && <p className="zs-eyebrow">{props.eyebrow}</p>}
+      <h1>
+        <Highlighted text={props.heading} highlight={props.highlight} />
+        {words.length > 0 && (
+          <>
+            {" "}
+            <span className="zs-rotator" data-n={Math.min(words.length, 5)}>
+              <span className="zs-rotator-track">
+                {[...words, words[0]].map((w, i) => (
+                  <span key={i} aria-hidden={i > 0 || undefined}>{w}</span>
+                ))}
+              </span>
+            </span>
+          </>
+        )}
+      </h1>
+      {props.subheading && <p className="zs-lede">{props.subheading}</p>}
+      {(props.primaryCta || props.secondaryCta) && (
+        <div className="zs-actions">
+          {props.primaryCta && <A link={props.primaryCta} ctx={ctx} className="zs-btn zs-btn-primary" />}
+          {props.secondaryCta && <A link={props.secondaryCta} ctx={ctx} className="zs-btn zs-btn-ghost" />}
         </div>
-        {props.image && <Img src={props.image} alt={props.heading} className="zs-hero-img" />}
+      )}
+      {props.badges && props.badges.length > 0 && (
+        <ul className="zs-hero-badges">
+          {props.badges.map((b, i) => (
+            <li key={i}>{b}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+  return (
+    <section
+      id={id}
+      className={`zs-hero zs-hero-${props.align} ${props.image ? "zs-hero-image" : ""}`}
+      data-layout={layout}
+      data-backdrop={props.backdrop ?? "glow"}
+      style={layout === "fullbleed" && props.image ? { ["--zs-hero-bg" as string]: `url("${props.image.replace(/"/g, "%22")}")` } : undefined}
+    >
+      <div className="zs-container zs-hero-inner">
+        {copy}
+        {props.image && layout !== "fullbleed" && <Img src={props.image} alt={props.heading} className="zs-hero-img" />}
       </div>
     </section>
   );
 }
 
 function Features({ props, id }: P<"features">) {
+  const layout = props.layout ?? "cards";
   return (
     <Section id={id}>
       <Heading heading={props.heading} subheading={props.subheading} center />
-      <div className={`zs-grid zs-cols-${props.columns}`}>
+      <div className={`zs-grid zs-cols-${props.columns} zs-features-${layout}`}>
         {props.items.map((item, i) => (
-          <div key={i} className="zs-card zs-feature">
-            <span className="zs-feature-mark" aria-hidden="true">
-              {String(i + 1).padStart(2, "0")}
-            </span>
-            <h3>{item.title}</h3>
-            <p>{item.body}</p>
+          <div key={i} className={layout === "cards" || layout === "bento" ? "zs-card zs-feature" : "zs-feature"}>
+            {item.icon ? (
+              <span className="zs-feature-icon">
+                <SiteIcon name={item.icon} size={layout === "list" ? 20 : 24} />
+              </span>
+            ) : layout === "list" ? (
+              <span className="zs-feature-icon"><SiteIcon name="check" size={20} /></span>
+            ) : (
+              <span className="zs-feature-mark" aria-hidden="true">
+                {String(i + 1).padStart(2, "0")}
+              </span>
+            )}
+            <div>
+              <h3>{item.title}</h3>
+              <p>{item.body}</p>
+            </div>
           </div>
         ))}
       </div>
@@ -110,10 +167,46 @@ function Features({ props, id }: P<"features">) {
   );
 }
 
-const inr = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+const inr = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
+
+type Card = ProductView & { groupCard?: { id: string; variants: number; fromPrice: boolean } };
+
+/** Variants of one group become one card: the group's name and photo, the lowest price, in stock if any variant is. */
+export function productCards(products: ProductView[]): Card[] {
+  const out: Card[] = [];
+  const groups = new Map<string, Card>();
+  for (const p of products) {
+    if (!p.group) {
+      out.push(p);
+      continue;
+    }
+    const seen = groups.get(p.group.id);
+    if (!seen) {
+      const card: Card = {
+        ...p,
+        id: p.group.id,
+        name: p.group.name,
+        images: [...p.group.images, ...p.images],
+        groupCard: { id: p.group.id, variants: 1, fromPrice: false },
+      };
+      groups.set(p.group.id, card);
+      out.push(card);
+      continue;
+    }
+    seen.groupCard!.variants++;
+    if (p.price !== null && (seen.price === null || p.price !== seen.price)) seen.groupCard!.fromPrice = true;
+    if (p.price !== null && (seen.price === null || p.price < seen.price)) {
+      seen.price = p.price;
+      seen.mrp = p.mrp;
+    }
+    if (p.inStock) seen.inStock = true;
+    if (!seen.images.length) seen.images = p.images;
+  }
+  return out;
+}
 
 function ProductGrid({ props, ctx, id }: P<"productGrid">) {
-  let items = ctx.products.filter((p) => !props.category || (p.category ?? "").toLowerCase() === props.category.toLowerCase());
+  let items = productCards(ctx.products).filter((p) => !props.category || (p.category ?? "").toLowerCase() === props.category.toLowerCase());
   items = [...items].sort((a, b) => {
     switch (props.sort) {
       case "price_asc":
@@ -133,13 +226,13 @@ function ProductGrid({ props, ctx, id }: P<"productGrid">) {
       {items.length === 0 ? (
         <p className="zs-empty">
           {ctx.mode === "preview"
-            ? "No products yet — connect Zuuvy in Integrations and they appear here."
+            ? "No products yet — add them under Products, or connect Zuuvy in Integrations."
             : "New products are on their way. Check back soon."}
         </p>
       ) : (
         <div className={`zs-grid zs-cols-${props.columns} zs-products`}>
           {items.map((p) => {
-            const href = ctx.productHref?.(p.id);
+            const href = p.groupCard ? ctx.groupHref?.(p.groupCard.id) : ctx.productHref?.(p.id);
             const body = (
               <>
                 <div className="zs-product-media">
@@ -151,20 +244,26 @@ function ProductGrid({ props, ctx, id }: P<"productGrid">) {
                   <h3>{p.name}</h3>
                   {props.showPrices && p.price !== null && (
                     <p className="zs-price">
+                      {p.groupCard?.fromPrice && <span className="zs-from">from </span>}
                       {inr(p.price)}
                       {p.mrp !== null && p.mrp > p.price && <s>{inr(p.mrp)}</s>}
                     </p>
                   )}
+                  {p.groupCard && p.groupCard.variants > 1 && <p className="zs-muted zs-small">{p.groupCard.variants} options</p>}
                 </div>
               </>
             );
-            return href ? (
-              <a key={p.id} href={href} className="zs-card zs-product">
-                {body}
-              </a>
-            ) : (
+            const action = !p.groupCard && ctx.cardAction ? ctx.cardAction(p) : null;
+            return (
               <div key={p.id} className="zs-card zs-product">
-                {body}
+                {href ? (
+                  <a href={href} className="zs-product-link">
+                    {body}
+                  </a>
+                ) : (
+                  body
+                )}
+                {action && <div className="zs-product-action">{action}</div>}
               </div>
             );
           })}
@@ -189,10 +288,24 @@ function ImageText({ props, ctx, id }: P<"imageText">) {
   return (
     <Section id={id}>
       <div className={`zs-split zs-split-${props.imageSide}`}>
-        <Img src={props.image} alt={props.heading} className="zs-split-img" />
+        <div className="zs-split-media">
+          <Img src={props.image} alt={props.heading} className="zs-split-img" />
+          {props.badge && <span className="zs-float-badge">{props.badge}</span>}
+        </div>
         <div className="zs-prose">
+          {props.eyebrow && <p className="zs-eyebrow">{props.eyebrow}</p>}
           <h2>{props.heading}</h2>
           <Paragraphs text={props.body} />
+          {props.bullets && props.bullets.length > 0 && (
+            <ul className="zs-bullets">
+              {props.bullets.map((b, i) => (
+                <li key={i}>
+                  <SiteIcon name={b.icon ?? "circle-check"} size={20} />
+                  <span>{b.text}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           {props.cta && (
             <div className="zs-actions">
               <A link={props.cta} ctx={ctx} className="zs-btn zs-btn-primary" />
@@ -205,10 +318,11 @@ function ImageText({ props, ctx, id }: P<"imageText">) {
 }
 
 function Gallery({ props, ctx, id }: P<"gallery">) {
+  const layout = props.layout ?? "grid";
   return (
     <Section id={id}>
       <Heading heading={props.heading} />
-      <div className={`zs-grid zs-cols-${props.columns}`}>
+      <div className={layout === "grid" ? `zs-grid zs-cols-${props.columns}` : `zs-gallery-${layout} zs-cols-${props.columns}`}>
         {props.items.map((item, i) => {
           const inner = (
             <>
@@ -234,35 +348,90 @@ function Gallery({ props, ctx, id }: P<"gallery">) {
   );
 }
 
+function Stars({ n }: { n?: number }) {
+  if (!n) return null;
+  return (
+    <span className="zs-stars" aria-label={`${n} out of 5`}>
+      {"★★★★★".slice(0, n)}
+      <span aria-hidden="true">{"★★★★★".slice(n)}</span>
+    </span>
+  );
+}
+
 function Testimonials({ props, id }: P<"testimonials">) {
+  const layout = props.layout ?? "cards";
+  const quote = (t: (typeof props.items)[number], i: number, extra = "") => (
+    <figure key={i} className={`zs-card zs-quote ${extra}`}>
+      <Stars n={t.rating} />
+      <blockquote>“{t.quote}”</blockquote>
+      <figcaption>
+        <span className="zs-avatar" aria-hidden="true">{t.author.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase()}</span>
+        <span>
+          <strong>{t.author}</strong>
+          {t.role && <span>{t.role}</span>}
+        </span>
+      </figcaption>
+    </figure>
+  );
   return (
     <Section id={id} className="zs-surface">
       <Heading heading={props.heading} center />
-      <div className={`zs-grid zs-cols-${Math.min(3, props.items.length)}`}>
-        {props.items.map((t, i) => (
-          <figure key={i} className="zs-card zs-quote">
-            <blockquote>“{t.quote}”</blockquote>
-            <figcaption>
-              <strong>{t.author}</strong>
-              {t.role && <span>{t.role}</span>}
-            </figcaption>
-          </figure>
-        ))}
-      </div>
+      {layout === "marquee" ? (
+        <div className="zs-marquee-wrap">
+          <div className="zs-marquee-track zs-quote-track">
+            {[...props.items, ...props.items].map((t, i) => (
+              <div key={i} aria-hidden={i >= props.items.length || undefined}>
+                {quote(t, i)}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : layout === "spotlight" ? (
+        <div className="zs-spotlight">
+          {props.items[0] && quote(props.items[0], 0, "zs-quote-big")}
+          {props.items.length > 1 && <div className={`zs-grid zs-cols-${Math.min(3, props.items.length - 1)}`}>{props.items.slice(1).map((t, i) => quote(t, i + 1))}</div>}
+        </div>
+      ) : (
+        <div className={`zs-grid zs-cols-${Math.min(3, props.items.length)}`}>{props.items.map((t, i) => quote(t, i))}</div>
+      )}
     </Section>
   );
+}
+
+/** "12,000+" → 12000 with "+" after; values that do not start with a number are shown as written. */
+function countable(value: string): { n: number; before: string; after: string; decimals: number } | null {
+  const m = value.match(/^([^\d]*)(\d[\d,]*(?:\.\d+)?)(.*)$/);
+  if (!m) return null;
+  const digits = m[2]!.replace(/,/g, "");
+  const n = Number(digits);
+  if (!Number.isFinite(n) || n > 1e9) return null;
+  return { n, before: m[1]!, after: m[3]!, decimals: digits.includes(".") ? digits.split(".")[1]!.length : 0 };
 }
 
 function Stats({ props, id }: P<"stats">) {
   return (
     <Section id={id} className="zs-stats-section">
+      {props.heading && <Heading heading={props.heading} center />}
       <dl className={`zs-stats zs-cols-${Math.min(4, props.items.length)}`}>
-        {props.items.map((s, i) => (
-          <div key={i}>
-            <dt>{s.label}</dt>
-            <dd>{s.value}</dd>
-          </div>
-        ))}
+        {props.items.map((s, i) => {
+          const c = countable(s.value);
+          return (
+            <div key={i}>
+              <dt>{s.label}</dt>
+              <dd>
+                {s.icon && <SiteIcon name={s.icon} className="zs-stat-icon" size={22} />}
+                {c && c.decimals === 0 && !s.value.includes(",") ? (
+                  // Counts up in browsers that animate registered properties; the number is always in the text too.
+                  <span className="zs-count" style={{ ["--to" as string]: c.n }} data-before={c.before} data-after={c.after}>
+                    <span className="zs-count-text">{s.value}</span>
+                  </span>
+                ) : (
+                  s.value
+                )}
+              </dd>
+            </div>
+          );
+        })}
       </dl>
     </Section>
   );
@@ -287,13 +456,84 @@ function Faq({ props, id }: P<"faq">) {
 }
 
 function Cta({ props, ctx, id }: P<"cta">) {
+  const style = props.style ?? "banner";
   return (
     <Section id={id}>
-      <div className="zs-cta">
-        <h2>{props.heading}</h2>
-        {props.body && <p>{props.body}</p>}
-        <A link={props.button} ctx={ctx} className="zs-btn zs-btn-invert" />
+      <div className={`zs-cta zs-cta-${style}`}>
+        <div>
+          <h2>{props.heading}</h2>
+          {props.body && <p>{props.body}</p>}
+        </div>
+        <div className="zs-actions">
+          <A link={props.button} ctx={ctx} className={`zs-btn ${style === "minimal" ? "zs-btn-primary" : "zs-btn-invert"}`} />
+          {props.secondary && <A link={props.secondary} ctx={ctx} className="zs-btn zs-btn-ghost" />}
+        </div>
       </div>
+    </Section>
+  );
+}
+
+function Logos({ props, ctx, id }: P<"logos">) {
+  const item = (l: (typeof props.items)[number], i: number, hidden?: boolean) => {
+    const inner = l.image ? <img src={l.image} alt={hidden ? "" : l.name} loading="lazy" /> : <span>{l.name}</span>;
+    return l.href && !hidden ? (
+      <a key={i} href={ctx.href(l.href)} className="zs-logo">{inner}</a>
+    ) : (
+      <div key={i} className="zs-logo" aria-hidden={hidden || undefined}>{inner}</div>
+    );
+  };
+  return (
+    <Section id={id} className="zs-logos-section">
+      {props.heading && <p className="zs-logos-heading">{props.heading}</p>}
+      {props.marquee ? (
+        <div className="zs-marquee-wrap">
+          <div className="zs-marquee-track">
+            {props.items.map((l, i) => item(l, i))}
+            {props.items.map((l, i) => item(l, i + props.items.length, true))}
+          </div>
+        </div>
+      ) : (
+        <div className="zs-logo-row">{props.items.map((l, i) => item(l, i))}</div>
+      )}
+    </Section>
+  );
+}
+
+function Marquee({ props, id }: P<"marquee">) {
+  const run = (hidden: boolean) =>
+    props.items.map((t, i) => (
+      <span key={`${hidden}-${i}`} className="zs-band-item" aria-hidden={hidden || undefined}>
+        {t}
+        <SiteIcon name={props.icon ?? "sparkle"} size={18} />
+      </span>
+    ));
+  return (
+    <section id={id} className={`zs-band zs-band-${props.tone}`} data-speed={props.speed}>
+      <div className="zs-marquee-wrap">
+        <div className="zs-marquee-track">
+          {run(false)}
+          {run(true)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Steps({ props, id }: P<"steps">) {
+  return (
+    <Section id={id}>
+      <Heading heading={props.heading} subheading={props.subheading} center />
+      <ol className={`zs-steps-block zs-steps-${props.layout} zs-cols-${Math.min(4, props.items.length)}`}>
+        {props.items.map((step, i) => (
+          <li key={i} className={props.layout === "cards" ? "zs-card" : undefined}>
+            <span className="zs-step-badge">{step.icon ? <SiteIcon name={step.icon} size={22} /> : i + 1}</span>
+            <div>
+              <h3>{step.title}</h3>
+              <p>{step.body}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
     </Section>
   );
 }
@@ -342,7 +582,7 @@ function Contact({ props, id }: P<"contact">) {
   );
 }
 
-type AnySection = { id: string; type: BlockType; props: unknown };
+type AnySection = { id: string; type: BlockType; props: unknown; style?: SectionStyle };
 
 // ---------------------------------------------------------------------------
 // Collections: data drawn in one of a few layouts. Every field is optional
@@ -488,11 +728,35 @@ const COMPONENTS = {
   faq: Faq,
   cta: Cta,
   contact: Contact,
+  logos: Logos,
+  marquee: Marquee,
+  steps: Steps,
   collection: Collection,
 } as const;
 
+/**
+ * Every section sits in a wrapper that carries its style — background,
+ * texture, lower edge, spacing, entrance — so the blocks themselves stay
+ * about content and one set of rules draws the look.
+ */
 export function blockSwitch(section: AnySection, ctx: RenderContext) {
   const Component = COMPONENTS[section.type] as (p: { props: unknown; ctx: RenderContext; id: string }) => ReactNode;
   if (!Component) return null;
-  return <Component key={section.id} id={section.id} props={section.props} ctx={ctx} />;
+  const st = section.style ?? {};
+  const image = st.background === "image" && st.image ? st.image : null;
+  return (
+    <div
+      key={section.id}
+      className="zs-block"
+      data-type={section.type}
+      data-bg={st.background && st.background !== "default" ? st.background : undefined}
+      data-pattern={st.pattern && st.pattern !== "none" ? st.pattern : undefined}
+      data-divider={st.divider && st.divider !== "none" ? st.divider : undefined}
+      data-spacing={st.spacing && st.spacing !== "normal" ? st.spacing : undefined}
+      data-anim={st.animation && st.animation !== "auto" ? st.animation : undefined}
+      style={image ? { ["--zs-section-image" as string]: `url("${image.replace(/"/g, "%22")}")` } : undefined}
+    >
+      <Component id={section.id} props={section.props} ctx={ctx} />
+    </div>
+  );
 }

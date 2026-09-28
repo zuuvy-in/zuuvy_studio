@@ -5,6 +5,7 @@ import { type Email, sendEmail } from "./email";
 import { mergeVersion, pushVersion } from "./git";
 import { markOrderSyncFailed, pushOrder } from "./orders";
 import type { Handler } from "./outbox";
+import { notifyOrderPlaced } from "./plugins";
 
 export const HANDLERS: Record<string, Handler> = {
   "order.push": {
@@ -26,6 +27,9 @@ export const HANDLERS: Record<string, Handler> = {
   },
   "domain.release": {
     run: (job) => releaseCertificate(String(job.payload.certificateArn)),
+  },
+  "plugin.notify": {
+    run: (job) => notifyOrderPlaced(job.tenant_id, String(job.payload.pluginId), String(job.payload.orderId)),
   },
   "email.send": {
     run: (job) => sendEmail(job.payload as unknown as Email),

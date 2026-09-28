@@ -261,3 +261,76 @@ taking orders ("Made to order"). In `sell`, accepting an order takes whatever
 stock there is, down to zero, and records it in `orders.stock_taken`;
 cancelling puts back exactly that. It has no effect when stock is not counted.
 With a data source (Zuuvy) the order still goes there, and it may refuse.
+
+## Commerce: variants, cart, checkout, accounts, discounts, plugins
+
+**Variant groups** (`platform/src/groups.ts`, `product_groups`, `products.group_id` + `products.options`).
+A group is one thing to shop for; each product in it is one combination of the
+group's options (up to 4 options, 200 combinations). Groups are filled by
+generating every combination (`generateVariants`) or by grouping existing
+products and setting each one's combination (`setVariants`, which refuses two
+products for one combination). The storefront shows a group as one card
+(`runtime productCards`: lowest price, "from", in stock if any variant is) and
+one page, `/g/<id>`, where the options pick the variant; its pictures come
+first, then the group's. `jsonb` does not keep key order, so a variant's label
+is always built in the group's option order (`variantLabel`).
+
+**Cart and checkout** (`platform/src/cart.ts`, `apps/renderer/app/{cart,checkout}`).
+The cart is a cookie of product ids and quantities on the store's own host;
+every price is worked out again on the server (`quoteCart`). `checkout` quotes
+with plugins, reads the answers to plugin questions, lets `checkout.validate`
+refuse, and calls `placeOrder`, whose transaction re-decides the discounts from
+the rules as they stand and redeems them with a conditional update, so the last
+use of a limited code goes to one order. Payment is cash on delivery.
+
+**How it looks is the AI's decision** (`tree.commerce`, op `setCommerce`, tool
+`set_commerce`, stores only): cart as a drawer or a page, bag/cart/basket icon,
+in the header or floating; add to cart, buy now or both; checkout on one page
+or in steps, summary beside or above, note field, heading, a reassurance line;
+the account link in the header or footer. Absent reads as `DEFAULT_COMMERCE`.
+The drawer opens on `?cart=open` (rendered open by the server) or `#cart`.
+
+**Customer accounts** (`platform/src/customers.ts`, `/account`). Email and
+password per business — the same email at two businesses is two customers.
+Sessions are hashed tokens in `customer_sessions`, in a cookie on the store's
+host. Orders are linked only when placed while signed in; a phone number is not
+proof of identity, so earlier orders are never attached by it. The account
+lists orders with their status and each order's timeline.
+
+**Discounts** (`platform/src/discounts.ts`). Automatic (no code) or by code;
+scope all / products / groups / categories; minimum spend and quantity on the
+scoped lines; cap; dates; usage limit; once per customer (account or phone);
+first order only. One non-stacking discount applies — the best for the
+customer — plus any marked `stacks`. Per-customer rules are checked at
+checkout, when the buyer is known.
+
+**Plugins** (`platform/src/plugins.ts`, `docs/PLUGINS.md`). Signed https calls
+for `cart.calculate`, `checkout.fields`, `checkout.validate` and `order.placed`
+(the last through the outbox). They go through `references.postJson` — the same
+SSRF guard as reference fetching, https only, no redirects, 3 s, 64 KB. A
+failing plugin is skipped and its error kept; it can shape a sale, never break
+one.
+
+## Design range, icons and skills
+
+**Section styles** (`core SectionStyle`, op `styleSection`, tool `style_section`). Every section can carry a
+style beside its props: background (default, surface, primary, dark, gradient, mesh, image), pattern
+(dots, grid, noise), divider (wave, slant, curve — the section's bottom edge), spacing and its scroll entrance.
+The runtime wraps each section in `.zs-block` carrying these as data attributes; dark, primary, gradient and
+image backgrounds redefine the colour variables inside the section, so every block inverts correctly without
+knowing it. Optional, so older trees are unchanged.
+
+**Richer blocks**: hero layouts (classic, split, fullbleed, stacked), backdrops, a gradient `highlight`, rotating
+words and proof badges; features layouts (cards, bento, icons, list) with icons; imageText bullets, eyebrow and a
+floating badge; gallery masonry and carousel; testimonials marquee and spotlight with ratings; stats that count up;
+CTA styles (banner, glow, split, minimal); new `logos`, `marquee` and `steps` blocks. All CSS, no client script;
+motion respects `prefers-reduced-motion` and the theme's motion setting, and anything a browser cannot animate is
+drawn in its final state.
+
+**Icons**: an `icon` field is a Lucide name (drawn inline by `runtime/src/icons.tsx` from the bundled
+`@iconify-json/lucide` set) or an https picture from an icon service (e.g. Icons8 through a remote MCP server).
+The editor refuses names that do not exist with suggestions (`ai/src/icons.ts`); `design__search_icons` finds
+names by meaning, locally and through Iconify's public search when reachable.
+
+**Skills** (`ai/src/skills.ts`): web design, content and animation guidance written for these blocks. They are
+part of the build and plan prompts, and the design kit serves them as MCP prompts and a `skill` tool.

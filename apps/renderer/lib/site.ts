@@ -34,6 +34,7 @@ export function toView(p: {
   stock: number | null;
   unit_label: string | null;
   backorders?: boolean;
+  group?: { id: string; name: string; images: string[] };
 }): ProductView {
   return {
     id: p.id,
@@ -47,6 +48,7 @@ export function toView(p: {
     stock: p.stock,
     unitLabel: p.unit_label,
     backorders: p.backorders ?? false,
+    ...(p.group ? { group: { id: p.group.id, name: p.group.name, images: p.group.images } } : {}),
   };
 }
 

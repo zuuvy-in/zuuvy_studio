@@ -18,6 +18,9 @@ import {
   Theme,
   describeIssues,
   newId,
+  Commerce,
+  DEFAULT_COMMERCE,
+  SectionStyle,
 } from "./tree";
 
 export class OpError extends Error {
@@ -33,6 +36,15 @@ const DeepPartialTheme = z.object({
 
 export const Operation = z.discriminatedUnion("op", [
   z.object({ op: z.literal("setTheme"), theme: DeepPartialTheme }),
+  z.object({
+    op: z.literal("setCommerce"),
+    commerce: z.object({
+      cart: Commerce.shape.cart.unwrap().partial().optional(),
+      buy: Commerce.shape.buy.unwrap().optional(),
+      checkout: Commerce.shape.checkout.unwrap().partial().optional(),
+      account: Commerce.shape.account.unwrap().partial().optional(),
+    }),
+  }),
   z.object({
     op: z.literal("setMeta"),
     title: z.string().max(100).optional(),
@@ -75,6 +87,12 @@ export const Operation = z.discriminatedUnion("op", [
     props: z.record(z.string(), z.unknown()),
   }),
   z.object({ op: z.literal("removeSection"), section: z.string() }),
+  z.object({
+    op: z.literal("styleSection"),
+    section: z.string(),
+    /** Fields to set; null clears one; an empty object clears them all. */
+    style: z.record(z.string(), z.unknown()),
+  }),
   z.object({
     op: z.literal("moveSection"),
     section: z.string(),
@@ -120,6 +138,16 @@ function applyOne(tree: SiteTree, raw: Operation): void {
         ...((op.theme.motion ?? tree.theme.motion) ? { motion: op.theme.motion ?? tree.theme.motion } : {}),
       };
       return;
+    case "setCommerce": {
+      const now = tree.commerce ?? DEFAULT_COMMERCE;
+      tree.commerce = Commerce.parse({
+        cart: { ...now.cart, ...op.commerce.cart },
+        buy: op.commerce.buy ?? now.buy,
+        checkout: { ...now.checkout, ...op.commerce.checkout },
+        account: { ...now.account, ...op.commerce.account },
+      });
+      return;
+    }
     case "setMeta":
       if (op.title !== undefined) tree.meta.title = op.title;
       if (op.description !== undefined) tree.meta.description = op.description;
@@ -179,6 +207,17 @@ function applyOne(tree: SiteTree, raw: Operation): void {
         if (v === null) delete (merged as Record<string, unknown>)[k];
       }
       (section as { props: unknown }).props = blockProps(section.type, merged);
+      return;
+    }
+    case "styleSection": {
+      const { section } = findSection(tree, op.section);
+      const next: Record<string, unknown> = Object.keys(op.style).length ? { ...(section.style ?? {}), ...op.style } : {};
+      for (const [k, v] of Object.entries(op.style)) if (v === null) delete next[k];
+      const parsed = SectionStyle.safeParse(next);
+      if (!parsed.success) throw new OpError(`section style: ${describeIssues(parsed.error)}`);
+      if (parsed.data.background === "image" && !parsed.data.image) throw new OpError("section style: background image needs an image URL");
+      if (Object.keys(parsed.data).length) section.style = parsed.data;
+      else delete section.style;
       return;
     }
     case "removeSection": {

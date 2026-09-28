@@ -10,7 +10,7 @@ import type { Page, Section, SiteTree } from "./tree";
 export type FieldChange = { field: string; before: unknown; after: unknown };
 
 export type Change =
-  | { kind: "meta" | "theme" | "nav" | "footer"; label: string; fields: FieldChange[] }
+  | { kind: "meta" | "theme" | "nav" | "footer" | "commerce"; label: string; fields: FieldChange[] }
   | { kind: "page-added" | "page-removed"; label: string; page: string }
   | { kind: "page-changed"; label: string; page: string; fields: FieldChange[] }
   | {
@@ -42,6 +42,9 @@ export const BLOCK_LABELS: Record<Section["type"], string> = {
   faq: "FAQ",
   cta: "Call to action",
   contact: "Contact",
+  logos: "Logos",
+  marquee: "Marquee",
+  steps: "Steps",
   collection: "Collection",
 };
 
@@ -95,10 +98,10 @@ function pageLabel(page: Page) {
 export function diffTrees(from: SiteTree, to: SiteTree): Change[] {
   const changes: Change[] = [];
 
-  for (const kind of ["meta", "theme", "nav", "footer"] as const) {
-    const fields = fieldChanges(from[kind], to[kind]);
+  for (const kind of ["meta", "theme", "nav", "footer", "commerce"] as const) {
+    const fields = fieldChanges(from[kind] ?? {}, to[kind] ?? {});
     if (fields.length) {
-      const label = { meta: "Site details", theme: "Theme", nav: "Navigation", footer: "Footer" }[kind];
+      const label = { meta: "Site details", theme: "Theme", nav: "Navigation", footer: "Footer", commerce: "Cart and checkout" }[kind];
       changes.push({ kind, label, fields });
     }
   }
@@ -159,7 +162,10 @@ export function diffTrees(from: SiteTree, to: SiteTree): Change[] {
         });
         continue;
       }
-      const fields = fieldChanges(prev.props, s.props);
+      const fields = [
+        ...fieldChanges(prev.props, s.props),
+        ...fieldChanges(prev.style ?? {}, s.style ?? {}).map((f) => ({ ...f, field: `style.${f.field}` })),
+      ];
       if (fields.length) {
         changes.push({
           kind: "section-changed",

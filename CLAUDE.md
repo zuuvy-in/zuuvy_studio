@@ -13,6 +13,7 @@ npm run dev          # studio :3000, renderer :3001 (<sub>.localhost), worker, m
 npm test             # vitest; platform tests create a throwaway DB per file on :54329
 npm run typecheck
 npm run admin:create   # platform superadmin (rishav@zuuvy.in by default)
+npm run db:seed:shop   # local: variants, discounts and a cart drawer on the demo store
 ```
 
 ## Things that will bite you
@@ -71,3 +72,19 @@ npm run admin:create   # platform superadmin (rishav@zuuvy.in by default)
 - **Selling out of stock** (`sites.out_of_stock = 'sell'`): accepting takes
   what stock exists and records it in `orders.stock_taken`; cancelling returns
   exactly that. Never return the ordered quantity for such an order.
+- **Prices are never trusted from the browser.** The cart cookie holds ids and
+  quantities only; `quoteCart` and `placeOrder` work out money every time, and
+  the order's transaction re-decides discounts.
+- **Plugins are the second outbound caller** and go through
+  `references.postJson` (same guard). A failing plugin is skipped, never
+  fatal. Tests replace the transport with `setPluginTransport`.
+- **Variant labels follow the group's option order** (`variantLabel`), never
+  `Object.values(product.options)` — jsonb reorders keys.
+- **Customer accounts are per business** and orders attach only when placed
+  signed in — never by phone number.
+- **Icons are names, never markup.** A tree names a Lucide icon (or an https
+  image); the SVG comes from the bundled package. New icon fields go through
+  `unknownIcons` in the tools so a wrong name is corrected, not drawn blank.
+- **Section looks live in `section.style`, not props** — the runtime's
+  `.zs-block` wrapper applies them. Scroll animations must finish by
+  `entry 100%`, or content near the page's top or bottom is left half-drawn.

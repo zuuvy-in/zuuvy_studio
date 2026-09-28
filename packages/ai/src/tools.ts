@@ -20,6 +20,7 @@ import {
   overwrites,
 } from "@zsite/core";
 import { z } from "zod";
+import { searchIcons, unknownIcons } from "./icons";
 
 export type EditState = {
   tree: SiteTree;
@@ -79,6 +80,8 @@ export type ToolCapabilities = {
    * already shows one). Off: no data tools, and no new `collection` sections.
    */
   dataTools?: boolean;
+  /** A store: the cart, checkout and account presentation can be set (set_commerce). */
+  commerceTools?: boolean;
   /** Per edit, so one prompt cannot spend a month of image budget. */
   maxImages?: number;
   maxReferences?: number;
@@ -174,6 +177,17 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
     return JSON.stringify({ ok: true, ...result(next) });
   };
 
+  /** A name the runtime cannot draw would silently show nothing; say so, with names that exist. */
+  const checkIcons = (props: unknown) => {
+    const bad = [...new Set(unknownIcons(props))];
+    if (!bad.length) return;
+    throw new ToolInputError(
+      `No icon called ${bad.map((b) => `"${b}"`).join(", ")}. Icons are Lucide names; for example ${bad
+        .map((b) => `for "${b}": ${searchIcons(b, 5).join(", ") || "search with design__search_icons"}`)
+        .join("; ")}.`,
+    );
+  };
+
   const tools: SiteTool[] = [
     siteTool({
       name: "view_site",
@@ -190,6 +204,7 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
         page: z.string().describe("Page id or path, e.g. / or /about"),
         type: z.enum(BLOCK_TYPES as [string, ...string[]]),
         props: z.record(z.string(), z.unknown()),
+        style: z.record(z.string(), z.unknown()).optional().describe("Optional section style (see style_section)"),
         after: z.string().optional().describe("Insert after this section id; omit to append"),
         index: z.number().int().min(0).optional().describe("Insert at this position (0 = top); ignored when `after` is given"),
       }),
@@ -197,19 +212,33 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
         if (i.type === "collection" && caps.dataTools === false) {
           throw new ToolInputError("Collection sections are for portfolio sites. Use features, gallery, testimonials or other blocks here.");
         }
+        checkIcons(i.props);
         const before = new Set(state.tree.pages.flatMap((p) => p.sections.map((s) => s.id)));
-        return apply(
+        const out = apply(
           { op: "addSection", page: i.page, type: i.type as BlockType, props: i.props, ...(i.after ? { after: i.after } : {}), ...(i.index !== undefined ? { index: i.index } : {}) },
           (tree) => ({ section: tree.pages.flatMap((p) => p.sections).find((s) => !before.has(s.id))?.id }),
         );
+        const id = (JSON.parse(out) as { section?: string }).section;
+        if (id && i.style && Object.keys(i.style).length) apply({ op: "styleSection", section: id, style: i.style });
+        return out;
       },
+    }),
+    siteTool({
+      name: "style_section",
+      description:
+        "Set how a section looks: background (default, surface, primary, dark, gradient, mesh, image + image URL), pattern (none, dots, grid, noise), divider — the shape of its bottom edge (none, wave, slant, curve), spacing (compact, normal, roomy), and animation — how it enters on scroll (auto, rise, fade, zoom, slide, blur, none). Send only what changes; null clears a field; {} resets the section to plain. Alternate backgrounds down a page for rhythm.",
+      inputSchema: z.object({ section: z.string(), style: z.record(z.string(), z.unknown()) }),
+      run: (i) => apply({ op: "styleSection", section: i.section, style: i.style }),
     }),
     siteTool({
       name: "update_section",
       description:
         "Change some props of a section. Send only the fields to change; arrays (items) are replaced whole. Send null to clear an optional field.",
       inputSchema: z.object({ section: z.string(), props: z.record(z.string(), z.unknown()) }),
-      run: (i) => apply({ op: "updateSection", section: i.section, props: i.props }),
+      run: (i) => {
+        checkIcons(i.props);
+        return apply({ op: "updateSection", section: i.section, props: i.props });
+      },
     }),
     siteTool({
       name: "remove_section",
@@ -293,6 +322,24 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
       run: (i) => apply({ op: "setFooter", ...i }),
     }),
   ];
+
+  if (caps.commerceTools) tools.push(
+    siteTool({
+      name: "set_commerce",
+      description:
+        "Decide how this store sells: the cart (drawer or page, icon, in the header or a floating button, optional label), the product buttons (add to cart, buy now, both), the checkout (one page or steps, summary beside or above, note field, heading, a reassurance line under Place order) and the customer account link (shown or not, header or footer, label). Send only what changes. Fit it to the store: a few big-ticket items suit buy now and a one-page checkout; a large catalogue suits a cart drawer and add to cart.",
+      inputSchema: z.object({
+        cart: z.object({ style: z.enum(["drawer", "page"]), icon: z.enum(["bag", "cart", "basket"]), placement: z.enum(["nav", "floating"]), label: z.string().max(20) }).partial().optional(),
+        buy: z.enum(["add_to_cart", "buy_now", "both"]).optional(),
+        checkout: z
+          .object({ layout: z.enum(["single", "steps"]), summary: z.enum(["side", "top"]), askNote: z.boolean(), heading: z.string().max(80), reassurance: z.string().max(200) })
+          .partial()
+          .optional(),
+        account: z.object({ show: z.boolean(), placement: z.enum(["nav", "footer"]), label: z.string().max(20) }).partial().optional(),
+      }),
+      run: (i) => apply({ op: "setCommerce", commerce: i }),
+    }),
+  );
 
   if (caps.dataTools !== false) tools.push(
     siteTool({
