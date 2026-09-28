@@ -1,15 +1,15 @@
-import { diffTrees } from "@zsite/core";
-import { NotFound, getSite, getVersion, getVersionByNumber, latestVersion, withTenant } from "@zsite/platform";
+import { collectionSpec, diffData, diffTrees } from "@zsite/core";
+import { ATTACHMENT_ACCEPT, NotFound, type StoredProposal, getSite, getVersion, getVersionByNumber, latestVersion, withTenant } from "@zsite/platform";
 import { notFound } from "next/navigation";
 import { SourceBadge } from "@/components/badges";
 import { ChangeList } from "@/components/changes";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Composer, PreviewFrame } from "@/components/site";
-import { Badge, ButtonLink, Card, CardHeader, Dl, Icon } from "@/components/ui";
+import { Badge, ButtonLink, Card, CardHeader, Dl, Icon, buttonClass } from "@/components/ui";
 import { ago, dateTime } from "@/lib/format";
 import { aiStatus } from "@/lib/ai";
 import { requireSession } from "@/lib/session";
-import { generateAction, publishAction, restoreAction } from "../../../actions";
+import { applyProposalsAction, generateAction, publishAction, restoreAction } from "../../../actions";
 
 export default async function VersionPage({ params }: { params: Promise<{ siteId: string; number: string }> }) {
   const { siteId, number: raw } = await params;
@@ -29,6 +29,11 @@ export default async function VersionPage({ params }: { params: Promise<{ siteId
   });
   const { site, version, parent, latest } = data;
   const changes = parent?.tree && version.tree ? diffTrees(parent.tree, version.tree) : [];
+  const dataChanges = parent ? diffData(parent.data, version.data) : [];
+  // What restoring this version could reset: tables where the latest version differs from this one.
+  const restorable = version.id !== latest.id ? diffData(latest.data, version.data) : [];
+  const layoutDiffers = version.id !== latest.id && latest.tree && version.tree ? diffTrees(latest.tree, version.tree).length > 0 : false;
+  const proposals = ((version.ai_meta as { proposals?: StoredProposal[] } | null)?.proposals ?? []);
   const meta = version.ai_meta as { provider?: string; model?: string; operations?: number; usage?: { input_tokens: number; output_tokens: number } } | null;
   const pages = version.tree?.pages.map((p) => ({ path: p.path, title: p.title })) ?? [];
 
@@ -47,12 +52,10 @@ export default async function VersionPage({ params }: { params: Promise<{ siteId
               <Icon name="compare" /> Compare with live
             </ButtonLink>
           )}
-          {version.id !== latest.id && (
-            <ActionForm action={restoreAction}>
-              <input type="hidden" name="siteId" value={site.id} />
-              <input type="hidden" name="number" value={version.number} />
-              <SubmitButton variant="secondary" pending="Restoring…"><Icon name="history" /> Restore as latest</SubmitButton>
-            </ActionForm>
+          {version.tree && (
+            <a href={`/sites/${site.id}/versions/${version.number}/source`} className={buttonClass("secondary")}>
+              <Icon name="code" /> Export source
+            </a>
           )}
           {!version.is_published && (
             <ActionForm action={publishAction}>
@@ -66,6 +69,67 @@ export default async function VersionPage({ params }: { params: Promise<{ siteId
         </div>
       </div>
 
+      {proposals.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50/60">
+          <CardHeader
+            title="The AI wants to change existing content — allow it?"
+            description="These changes touch data you already had, so they were held back. Tick the ones to allow; they are saved as a new version on top of the latest, and nothing else changes."
+          />
+          <ActionForm action={applyProposalsAction} className="space-y-2 p-5">
+            <input type="hidden" name="siteId" value={site.id} />
+            <input type="hidden" name="number" value={version.number} />
+            {proposals.map((p, i) => (
+              <label key={i} className="flex items-start gap-3 rounded-lg bg-white p-3 text-sm ring-1 ring-amber-200">
+                <input type="checkbox" name="proposal" value={i} defaultChecked className="mt-0.5" />
+                <span>
+                  <span className="font-medium text-slate-900">{p.description}</span>
+                  {"fields" in p.op && (
+                    <span className="mt-1 block text-xs text-slate-600">
+                      {Object.entries(p.op.fields).map(([k, v]) => `${k}: ${v === null || v === "" ? "(cleared)" : Array.isArray(v) ? v.join(", ") : String(v)}`).join(" · ").slice(0, 400)}
+                    </span>
+                  )}
+                </span>
+              </label>
+            ))}
+            <SubmitButton pending="Applying…">Allow selected changes</SubmitButton>
+          </ActionForm>
+        </Card>
+      )}
+
+      {version.id !== latest.id && version.tree && (
+        <Card>
+          <CardHeader
+            title={<span className="flex items-center gap-2"><Icon name="history" className="text-slate-400" /> Go back to this version</span>}
+            description={`Brings this version back as a new latest version (v${latest.number} stays in the history). Choose what to take from v${version.number}.`}
+          />
+          <ActionForm action={restoreAction} className="space-y-3 p-5">
+            <input type="hidden" name="siteId" value={site.id} />
+            <input type="hidden" name="number" value={version.number} />
+            <input type="hidden" name="choose" value="1" />
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm">
+                <input type="checkbox" name="layout" value="1" defaultChecked={layoutDiffers} className="mt-0.5" />
+                <span><strong className="text-slate-900">Layout, design and copy</strong><br /><span className="text-xs text-slate-500">{layoutDiffers ? "Pages, sections, theme, header and footer" : "Same as the latest"}</span></span>
+              </label>
+              {restorable.map((c) => (
+                <label key={c.collection} className="flex items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm">
+                  <input type="checkbox" name="tables" value={c.collection} className="mt-0.5" />
+                  <span>
+                    <strong className="text-slate-900">Reset {collectionSpec(c.collection)?.label ?? c.label}</strong>
+                    <br />
+                    <span className="text-xs text-slate-500">
+                      {[c.removed.length && `${c.removed.length} added since would go`, c.added.length && `${c.added.length} removed since would return`, c.changed.length && `${c.changed.length} edited since would revert`].filter(Boolean).join(" · ")}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {restorable.length === 0 && <p className="text-xs text-slate-500">The content tables are the same in both versions.</p>}
+            <SubmitButton variant="secondary" pending="Restoring…">Restore what I picked</SubmitButton>
+          </ActionForm>
+        </Card>
+      )}
+
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">
           {version.tree ? (
@@ -73,7 +137,7 @@ export default async function VersionPage({ params }: { params: Promise<{ siteId
           ) : (
             <Card className="p-8 text-sm text-slate-600">This is a code version ({version.git_ref}); previews of code versions come with Git import.</Card>
           )}
-          <Composer action={generateAction} siteId={site.id} baseNumber={version.number} aiReady={ai.ready} setupHint={ai.hint} title={`Continue from v${version.number}`} />
+          <Composer action={generateAction} siteId={site.id} baseNumber={version.number} aiReady={ai.ready} setupHint={ai.hint} accept={ATTACHMENT_ACCEPT} title={`Continue from v${version.number}`} />
         </div>
 
         <aside className="space-y-6">
@@ -102,7 +166,23 @@ export default async function VersionPage({ params }: { params: Promise<{ siteId
           </Card>
           <Card>
             <CardHeader title={parent ? `Changes from v${parent.number}` : "Changes"} />
-            <ChangeList changes={changes} empty={parent ? "Identical to its parent." : "The first version of this site."} />
+            <ChangeList changes={changes} empty={parent ? (dataChanges.length ? "Layout unchanged." : "Identical to its parent.") : "The first version of this site."} />
+            {dataChanges.length > 0 && (
+              <ul className="space-y-2 border-t border-slate-100 px-5 py-4 text-sm">
+                <li className="text-xs font-medium uppercase tracking-wide text-slate-400">Content</li>
+                {dataChanges.map((c) => (
+                  <li key={c.collection}>
+                    <span className="font-medium text-slate-800">{c.label}</span>
+                    <span className="text-slate-600">
+                      {c.added.length > 0 && ` · added ${c.added.join(", ")}`}
+                      {c.changed.length > 0 && ` · changed ${c.changed.join(", ")}`}
+                      {c.removed.length > 0 && ` · removed ${c.removed.join(", ")}`}
+                    </span>
+                  </li>
+                ))}
+                <li className="text-xs text-slate-500">v{parent?.number} holds the content as it was before — restore from it any time.</li>
+              </ul>
+            )}
           </Card>
         </aside>
       </div>

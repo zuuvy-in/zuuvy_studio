@@ -88,6 +88,38 @@ history, a live preview of any version (rendered by the same runtime as the
 live site), field-level diffs, side-by-side compare, and who/what made each
 change — including the prompt and model for AI versions.
 
+### Data travels with the version
+
+Structured content — a portfolio's profile, projects, experience, education,
+skills, services, testimonials, awards, publications, clients, gallery — lives
+in `site_versions.data` beside the tree (`core/src/data.ts`), shown by
+`collection` sections. Because it is part of an immutable version, the
+version a change was made on *is* the backup of the data before it, and
+restoring a version asks which tables to reset from it (and whether to bring
+the layout back). The Content editor saves each edit as a new version.
+
+### The brand kit
+
+`sites.brand` (`core/src/brand.ts`): logo, colours, fonts, motion, guidelines.
+What the owner sets is fixed — `set_theme` keeps those fields and tells the
+model so, and `applyBrand` runs over every AI version as the guarantee. What
+the owner leaves empty the AI chooses; its choices are recorded (`aiColors`).
+Saving the kit creates a version with it applied.
+
+### Getting a site in and out
+
+- Site export (zip, `platform/src/archive.ts`): every version and its data,
+  pictures, publications, domains and the site's orders. **Deleting a site
+  requires one** downloaded after its newest version (`sites.exported_at`,
+  `exported_seq`), under 24 hours old.
+- Revision source (`core/src/source.ts`): one version as plain JSON files
+  (pages, theme, nav, footer, `site/data/*.json`). Edited and zipped, it comes
+  back as a new version, validated in full with the file and field named.
+- GitHub (`platform/src/git.ts`): each version is pushed as branch
+  `zuuvy/v<n>`; publishing makes the default branch that version with a merge
+  commit whose tree is the published version (so a rollback rolls `main`
+  back too); any branch can be imported as a version.
+
 ## AI
 
 `packages/ai`: one tool per operation plus `view_site`, defined once
@@ -103,6 +135,24 @@ Providers (`providers/`), chosen by `ZSITE_AI_PROVIDER`:
 |---|---|---|
 | `bedrock` (default) | Amazon Nova Pro via the Converse API, `apac.amazon.nova-pro-v1:0` | AWS's own model family: covered by AWS promotional credits. Any Bedrock model with tool use works via `ZSITE_AI_MODEL`, e.g. Nova Premier (`us.amazon.nova-premier-v1:0`, US regions) for harder edits. |
 | `anthropic` | Claude (`claude-opus-5`) via the Anthropic SDK tool runner | Stronger multi-step editing; for when budget or credits allow. |
+
+Beyond the tree, the agent can:
+
+- **edit data** (`add_entry`, `update_entry`, `remove_entry`, `move_entry`).
+  Adding and filling empty fields apply at once; **changing or removing
+  what exists is held as a proposal** (`ai_meta.proposals`) the owner allows
+  on the version page, applied as a new version;
+- **make pictures** (`generate_image`, Amazon Nova Canvas on Bedrock, stored
+  in the media library, steered to the brand palette, 4 per request);
+- **look at reference websites** (`fetch_reference`: a guarded fetch —
+  public addresses only, pinned DNS, re-checked redirects — reduced to
+  headings, sections, colours and fonts);
+- **read attachments** — PDF, Word, Excel, CSV, text and screenshots go to
+  the model as Converse document/image blocks, for that request only.
+
+Every attempt is a row in `ai_usage` (tokens, pictures, outcome — including
+failures), shown per person under AI usage and across the platform in the
+internal dashboard (`/admin`, for rows in `platform_admins`).
 
 Credentials for Bedrock come from the AWS SDK chain (profile or keys locally,
 the service's IAM role in production). Sampling is near-greedy
@@ -148,14 +198,16 @@ Step Functions (domain onboarding: check → register/connect → zone → cert 
 - **`zuuvy.site` goes on the Public Suffix List**, so one tenant's pages cannot
   set cookies another tenant's pages read. The studio never lives under a
   tenant name (reserved subdomains in `core/src/subdomain.ts`).
-- **Custom domains**: buy through Route 53 (zero DNS steps), or connect one
-  owned elsewhere via Domain Connect, nameserver delegation, or copied records.
-  `site_domains` and host resolution already exist; the onboarding flow is next.
+- **Custom domains (built, on the load balancer)**: the owner adds a validation
+  CNAME and a CNAME to `domains.zuuvy.site`; the worker requests an ACM
+  certificate, attaches it to the HTTPS listener (SNI; 25 per listener by
+  default, raisable), and marks the domain active once DNS points at us
+  (`platform/src/domains.ts`). Buying domains through Route 53 comes later.
 
 ## Not built yet
 
-Custom-domain onboarding · payment gateways (Razorpay/Cashfree; default
+Payment gateways (Razorpay/Cashfree; default
 gateway via split settlement, flat fee) · WhatsApp via Twilio with template
-approval sync · message templates · eject to Git / import · plugin SDK and
+approval sync · message templates · running custom React code (source export covers content and layout) · plugin SDK and
 marketplace · runtime 2 and AI-assisted upgrades · "Sign in with Zuuvy" ·
 cart with several products · the Zuuvy-side implementation of the contract.

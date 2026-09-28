@@ -1,7 +1,8 @@
 /**
  * The deploy's database step, run as a one-off ECS task before new services
  * roll out: apply migrations as the owner, then make sure the app role can
- * log in with the password Secrets Manager generated for it. Idempotent.
+ * log in with the password Secrets Manager generated for it, then make sure
+ * the platform's superadmin exists (create-superadmin.ts). Idempotent.
  */
 import { join } from "node:path";
 import pg from "pg";
@@ -24,3 +25,6 @@ try {
 } finally {
   await admin.end();
 }
+
+// The first platform admin. Prints a generated password once, the first time only.
+await import("./create-superadmin");

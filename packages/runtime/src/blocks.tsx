@@ -344,6 +344,138 @@ function Contact({ props, id }: P<"contact">) {
 
 type AnySection = { id: string; type: BlockType; props: unknown };
 
+// ---------------------------------------------------------------------------
+// Collections: data drawn in one of a few layouts. Every field is optional
+// except the collection's title field, so each layout checks before drawing.
+// ---------------------------------------------------------------------------
+
+type Item = Record<string, unknown> & { id?: string };
+const str = (v: unknown) => (typeof v === "string" && v.trim() ? v : undefined);
+const years = (i: Item) => [str(i.start), str(i.end)].filter(Boolean).join(" – ") || (i.year ? String(i.year) : undefined);
+
+const SOCIALS: [string, string][] = [
+  ["website", "Website"], ["linkedin", "LinkedIn"], ["github", "GitHub"], ["instagram", "Instagram"], ["behance", "Portfolio"], ["resume", "Résumé"],
+];
+
+function About({ item, ctx }: { item: Item; ctx: RenderContext }) {
+  const name = str(item.name) ?? "";
+  return (
+    <div className="zs-about">
+      <Img src={str(item.photo)} alt={name} className="zs-about-photo" />
+      <div>
+        <h2>{name}</h2>
+        {str(item.headline) && <p className="zs-lede">{str(item.headline)}</p>}
+        {str(item.location) && <p className="zs-muted">{str(item.location)}</p>}
+        {str(item.bio) && <Paragraphs text={str(item.bio)!} />}
+        <div className="zs-actions">
+          {str(item.email) && <a className="zs-btn zs-btn-primary" href={`mailto:${str(item.email)}`}>Email me</a>}
+          {SOCIALS.filter(([k]) => str(item[k])).map(([k, label]) => (
+            <a key={k} className="zs-btn zs-btn-ghost" href={ctx.href(str(item[k])!)} target="_blank" rel="noreferrer">{label}</a>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CollectionItem({ item, layout, titleField, ctx }: { item: Item; layout: string; titleField: string; ctx: RenderContext }) {
+  const title = str(item[titleField]) ?? "";
+  const image = str(item.image) ?? str(item.logo);
+  const sub = [str(item.organisation), str(item.institution), str(item.client), str(item.issuer), str(item.venue), str(item.role) !== title ? str(item.role) : undefined, str(item.group)]
+    .filter(Boolean)
+    .join(" · ");
+  const body = str(item.summary) ?? str(item.description) ?? str(item.details);
+  const link = str(item.link);
+  const tags = Array.isArray(item.tags) ? (item.tags as string[]) : [];
+  if (layout === "chips") return <span className="zs-chip">{title}{str(item.level) && <em> · {str(item.level)}</em>}</span>;
+  if (layout === "timeline") {
+    return (
+      <li className="zs-timeline-item">
+        <span className="zs-timeline-when">{years(item)}</span>
+        <div>
+          <h3>{title}</h3>
+          {sub && <p className="zs-muted">{sub}</p>}
+          {body && <Paragraphs text={body} />}
+        </div>
+      </li>
+    );
+  }
+  if (typeof item.quote === "string") {
+    return (
+      <figure className="zs-card zs-quote">
+        <blockquote>“{item.quote}”</blockquote>
+        <figcaption><strong>{str(item.author)}</strong>{str(item.role) && <span> · {str(item.role)}</span>}</figcaption>
+      </figure>
+    );
+  }
+  const inner = (
+    <>
+      {(layout === "cards" || layout === "grid") && (image || layout === "cards") && <Img src={image} alt={title} className="zs-collection-media" />}
+      <div className="zs-collection-body">
+        <h3>{title}</h3>
+        {sub && <p className="zs-muted">{sub}</p>}
+        {layout !== "grid" && body && <p>{body}</p>}
+        {str(item.price) && <p className="zs-price">{str(item.price)}</p>}
+        {years(item) && layout === "list" && <p className="zs-muted">{years(item)}</p>}
+        {tags.length > 0 && <p className="zs-tags">{tags.map((t) => <span key={t} className="zs-chip">{t}</span>)}</p>}
+      </div>
+    </>
+  );
+  return link ? (
+    <a href={ctx.href(link)} className={`zs-card zs-collection-item zs-collection-${layout}`} target={link.startsWith("http") ? "_blank" : undefined} rel="noreferrer">
+      {inner}
+    </a>
+  ) : (
+    <div className={`zs-card zs-collection-item zs-collection-${layout}`}>{inner}</div>
+  );
+}
+
+const DEFAULT_LAYOUT: Record<string, string> = {
+  profile: "about", projects: "cards", experience: "timeline", education: "timeline", skills: "chips",
+  services: "cards", testimonials: "cards", awards: "list", publications: "list", clients: "grid", gallery: "grid",
+};
+const TITLE_FIELD: Record<string, string> = {
+  profile: "name", projects: "title", experience: "role", education: "qualification", skills: "name", services: "title",
+  testimonials: "author", awards: "title", publications: "title", clients: "name", gallery: "caption",
+};
+
+function Collection({ props, ctx, id }: P<"collection">) {
+  const items = (ctx.data?.[props.collection] ?? []).slice(0, props.limit ?? 60) as Item[];
+  const layout = props.layout ?? DEFAULT_LAYOUT[props.collection] ?? "cards";
+  if (!items.length) {
+    // An empty collection shows nothing on a live site; the preview says why.
+    if (ctx.mode === "live") return null;
+    return (
+      <Section id={id}>
+        <Heading heading={props.heading} subheading={props.subheading} />
+        <p className="zs-muted">No {props.collection} yet — add them under Content in the studio, or ask the AI.</p>
+      </Section>
+    );
+  }
+  if (layout === "about") {
+    return (
+      <Section id={id}>
+        <Heading heading={props.heading} subheading={props.subheading} />
+        <About item={items[0]!} ctx={ctx} />
+      </Section>
+    );
+  }
+  const titleField = TITLE_FIELD[props.collection] ?? "title";
+  const list = items.map((item, i) => <CollectionItem key={item.id ?? i} item={item} layout={layout} titleField={titleField} ctx={ctx} />);
+  return (
+    <Section id={id} className={layout === "chips" || layout === "timeline" ? "" : "zs-surface"}>
+      <Heading heading={props.heading} subheading={props.subheading} center={layout !== "timeline"} />
+      {layout === "timeline" ? (
+        <ol className="zs-timeline">{list}</ol>
+      ) : layout === "chips" ? (
+        <div className="zs-chips">{list}</div>
+      ) : (
+        <div className={`zs-grid zs-cols-${layout === "list" ? 2 : layout === "grid" ? 4 : 3}`}>{list}</div>
+      )}
+    </Section>
+  );
+}
+
 const COMPONENTS = {
   hero: Hero,
   features: Features,
@@ -356,6 +488,7 @@ const COMPONENTS = {
   faq: Faq,
   cta: Cta,
   contact: Contact,
+  collection: Collection,
 } as const;
 
 export function blockSwitch(section: AnySection, ctx: RenderContext) {

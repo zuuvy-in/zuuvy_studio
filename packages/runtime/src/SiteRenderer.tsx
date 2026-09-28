@@ -18,12 +18,13 @@ export function findPage(tree: SiteTree, path: string) {
 
 export function SiteShell({ tree, ctx, children }: { tree: SiteTree; ctx: RenderContext; children: ReactNode }) {
   return (
-    <div className="zs-site" style={themeStyle(tree.theme)} data-runtime={RUNTIME_VERSION}>
+    <div className="zs-site" style={themeStyle(tree.theme)} data-runtime={RUNTIME_VERSION} data-motion={tree.theme.motion ?? "subtle"}>
       {/* React hoists stylesheet links with a precedence into <head>. */}
       <link rel="stylesheet" href={fontsHref(tree.theme)} precedence="default" />
       <header className="zs-nav">
         <div className="zs-container zs-nav-inner">
           <a href={ctx.href("/")} className="zs-brand">
+            {tree.nav.logo && <img src={tree.nav.logo} alt="" className="zs-brand-logo" />}
             {tree.nav.brand}
           </a>
           <nav className="zs-nav-links" aria-label="Main">

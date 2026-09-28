@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { SidebarNav } from "@/components/nav";
 import { Icon } from "@/components/ui";
+import { hasStore, isPlatformAdmin, withTenant } from "@zsite/platform";
 import { requireSession } from "@/lib/session";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
+  const commerce = await withTenant(session.tenant.id, hasStore);
+  const admin = await isPlatformAdmin(session.user.id);
   return (
     <div className="md:flex">
       <aside className="border-b border-slate-200 bg-slate-50 md:sticky md:top-0 md:flex md:h-screen md:w-60 md:shrink-0 md:flex-col md:border-r md:border-b-0">
@@ -16,7 +19,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </div>
         </div>
         <div className="px-3 pb-3 md:flex-1">
-          <SidebarNav />
+          <SidebarNav commerce={commerce} admin={admin} />
         </div>
         <div className="hidden border-t border-slate-200 px-4 py-3 md:block">
           <p className="truncate text-sm font-medium text-slate-800">{session.user.name}</p>

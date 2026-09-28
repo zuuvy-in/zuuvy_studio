@@ -18,7 +18,7 @@ export default async function PreviewPage({ params }: { params: Promise<{ siteId
   const data = await withTenant(session.tenant.id, async (tx) => {
     const v = await getVersionByNumber(tx, siteId, Number(number));
     if (!v.tree) throw new NotFound("version");
-    return { tree: v.tree, products: await productsForTree(tx, v.tree) };
+    return { tree: v.tree, data: v.data, products: await productsForTree(tx, v.tree, siteId) };
   }).catch((e) => {
     if (e instanceof NotFound) notFound();
     throw e;
@@ -31,6 +31,7 @@ export default async function PreviewPage({ params }: { params: Promise<{ siteId
       ctx={{
         mode: "preview",
         href: linkRewriter(base),
+        data: data.data,
         products: data.products.map((p) => ({
           id: p.id,
           name: p.name,

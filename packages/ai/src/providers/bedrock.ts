@@ -25,7 +25,7 @@ import {
 import { z } from "zod";
 import { AgentError } from "../errors";
 import type { SiteTool } from "../tools";
-import { type Provider, emptyUsage } from "./types";
+import { type Attachment, type Provider, type Usage, emptyUsage, isImageFormat } from "./types";
 
 /** Anything with the client's `send` — a real BedrockRuntimeClient, or a fake in tests. */
 export type ConverseSender = { send(command: ConverseCommand): Promise<ConverseCommandOutput> };
@@ -53,11 +53,11 @@ export function toBedrockTools(tools: SiteTool[]): Tool[] {
   }));
 }
 
-function runTool(tools: SiteTool[], block: NonNullable<ContentBlock.ToolUseMember["toolUse"]>): ToolResultBlock {
+async function runTool(tools: SiteTool[], block: NonNullable<ContentBlock.ToolUseMember["toolUse"]>): Promise<ToolResultBlock> {
   const tool = tools.find((t) => t.name === block.name);
   try {
     if (!tool) throw new Error(`There is no tool called ${block.name}.`);
-    return { toolUseId: block.toolUseId, content: [{ text: tool.run(block.input) }], status: "success" };
+    return { toolUseId: block.toolUseId, content: [{ text: await tool.run(block.input) }], status: "success" };
   } catch (e) {
     return { toolUseId: block.toolUseId, content: [{ text: `Error: ${(e as Error).message}` }], status: "error" };
   }
@@ -98,15 +98,45 @@ function explain(e: unknown, model: string, region: string): never {
   }
 }
 
+/**
+ * Converse names documents in the prompt and allows only letters, digits,
+ * single spaces, hyphens, parentheses and square brackets, unique per request.
+ */
+export function documentName(raw: string, taken: Set<string>): string {
+  const base = raw.replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9 \-()[\]]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 60) || "Attachment";
+  let name = base;
+  for (let i = 2; taken.has(name); i++) name = `${base} ${i}`;
+  taken.add(name);
+  return name;
+}
+
+function attachmentBlocks(attachments: Attachment[]): ContentBlock[] {
+  const taken = new Set<string>();
+  return attachments.map((a): ContentBlock => {
+    if (isImageFormat(a.format)) return { image: { format: a.format, source: { bytes: a.bytes } } };
+    return { document: { name: documentName(a.name, taken), format: a.format, source: { bytes: a.bytes } } };
+  });
+}
+
+/** Tokens already spent are still spent when a later request fails; the error carries them. */
+function withUsage(fn: () => never, usage: Usage): never {
+  try {
+    fn();
+  } catch (e) {
+    if (e instanceof AgentError) e.usage = { ...usage };
+    throw e;
+  }
+}
+
 export function bedrockProvider(opts: BedrockOptions = {}): Provider {
   const region = opts.region ?? process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "ap-south-1";
   const client = opts.client ?? new BedrockRuntimeClient({ region });
 
-  return async ({ system, user, tools, model, maxIterations }) => {
+  return async ({ system, user, tools, model, maxIterations, attachments = [] }) => {
     const systemBlocks: SystemContentBlock[] = [{ text: system }];
     if (opts.promptCache) systemBlocks.push({ cachePoint: { type: "default" } });
     const toolConfig = { tools: toBedrockTools(tools) };
-    const messages: Message[] = [{ role: "user", content: [{ text: user }] }];
+    const messages: Message[] = [{ role: "user", content: [...attachmentBlocks(attachments), { text: user }] }];
     const usage = emptyUsage();
     let malformed = 0;
     let lastText = "";
@@ -123,7 +153,7 @@ export function bedrockProvider(opts: BedrockOptions = {}): Provider {
       try {
         res = await client.send(new ConverseCommand(input));
       } catch (e) {
-        explain(e, model, region);
+        withUsage(() => explain(e, model, region), usage);
       }
       usage.requests++;
       usage.input_tokens += res.usage?.inputTokens ?? 0;
@@ -136,14 +166,14 @@ export function bedrockProvider(opts: BedrockOptions = {}): Provider {
       }
       if (stop === "malformed_tool_use" || stop === "malformed_model_output") {
         // The model produced a call we cannot parse. Ask once or twice for a clean retry.
-        if (++malformed > MAX_MALFORMED_RETRIES) throw new AgentError("The AI kept producing malformed tool calls. Try a simpler request.");
+        if (++malformed > MAX_MALFORMED_RETRIES) throw Object.assign(new AgentError("The AI kept producing malformed tool calls. Try a simpler request."), { usage: { ...usage } });
         messages.push({ role: "user", content: [{ text: "Your last tool call could not be parsed. Call the tool again with valid JSON input matching its schema." }] });
         continue;
       }
-      if (stop === "model_context_window_exceeded") throw new AgentError("This site is too large for the AI model's context. Try a smaller change.");
+      if (stop === "model_context_window_exceeded") throw Object.assign(new AgentError("This site is too large for the AI model's context. Try a smaller change."), { usage: { ...usage } });
 
       const message = res.output?.message;
-      if (!message?.content) throw new AgentError("Bedrock returned no message.");
+      if (!message?.content) throw Object.assign(new AgentError("Bedrock returned no message."), { usage: { ...usage } });
       messages.push(message);
       const text = message.content
         .map((b) => ("text" in b && typeof b.text === "string" ? b.text : ""))
@@ -155,9 +185,12 @@ export function bedrockProvider(opts: BedrockOptions = {}): Provider {
       if (!uses.length) {
         return { finalText: lastText, model, usage, stopReason: stop, refused: false };
       }
-      if (stop === "max_tokens") throw new AgentError("The AI's reply was cut off mid-edit. Try a smaller change.");
+      if (stop === "max_tokens") throw Object.assign(new AgentError("The AI's reply was cut off mid-edit. Try a smaller change."), { usage: { ...usage } });
       // All results for one assistant turn go back in a single user message.
-      messages.push({ role: "user", content: uses.map((u) => ({ toolResult: runTool(tools, u) })) });
+      // In order, not in parallel: each call edits the tree the next one sees.
+      const results: ToolResultBlock[] = [];
+      for (const u of uses) results.push(await runTool(tools, u));
+      messages.push({ role: "user", content: results.map((toolResult) => ({ toolResult })) });
     }
     return { finalText: lastText, model, usage, stopReason: "max_iterations", refused: false };
   };

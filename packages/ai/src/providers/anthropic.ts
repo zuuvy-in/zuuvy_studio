@@ -7,11 +7,20 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { AgentError } from "../errors";
-import { type Provider, emptyUsage } from "./types";
+import { type Provider, emptyUsage, isImageFormat } from "./types";
 
 export function anthropicProvider(opts: { client?: Anthropic } = {}): Provider {
-  return async ({ system, user, tools, model, maxIterations }) => {
+  return async ({ system, user, tools, model, maxIterations, attachments = [] }) => {
     const client = opts.client ?? new Anthropic();
+    const content: Anthropic.Beta.BetaContentBlockParam[] = attachments.map((a) => {
+      const data = Buffer.from(a.bytes).toString("base64");
+      if (isImageFormat(a.format)) return { type: "image", source: { type: "base64", media_type: `image/${a.format}`, data } };
+      if (a.format === "pdf") return { type: "document", title: a.name, source: { type: "base64", media_type: "application/pdf", data } };
+      if (a.format === "txt" || a.format === "md" || a.format === "csv" || a.format === "html") {
+        return { type: "document", title: a.name, source: { type: "text", media_type: "text/plain", data: new TextDecoder().decode(a.bytes) } };
+      }
+      throw new AgentError(`${a.name}: Word and Excel files need the Bedrock provider. Save it as PDF or CSV instead.`);
+    });
     const runner = client.beta.messages.toolRunner({
       model,
       max_tokens: 16000,
@@ -23,7 +32,7 @@ export function anthropicProvider(opts: { client?: Anthropic } = {}): Provider {
       tools: tools.map((t) =>
         betaZodTool({ name: t.name, description: t.description, inputSchema: t.inputSchema, run: (input) => t.run(input) }),
       ),
-      messages: [{ role: "user", content: user }],
+      messages: [{ role: "user", content: [...content, { type: "text", text: user }] }],
     });
 
     const usage = emptyUsage();
@@ -37,6 +46,7 @@ export function anthropicProvider(opts: { client?: Anthropic } = {}): Provider {
         usage.cache_read_input_tokens += message.usage.cache_read_input_tokens ?? 0;
       }
     } catch (e) {
+      if (e instanceof AgentError) throw Object.assign(e, { usage: { ...usage } });
       if (e instanceof Anthropic.AuthenticationError) throw new AgentError("The AI service rejected the API key. Set ANTHROPIC_API_KEY.");
       if (e instanceof Anthropic.RateLimitError) throw new AgentError("The AI service is busy. Try again in a minute.");
       if (e instanceof Anthropic.APIError) throw new AgentError(`The AI service failed (${e.status}): ${e.message}`);

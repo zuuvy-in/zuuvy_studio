@@ -44,3 +44,53 @@ describe("site tools", () => {
     expect(o).toContain("shop (productGrid)");
   });
 });
+
+describe("brand locks, data proposals and optional tools", () => {
+  it("keeps colours the owner fixed and says so", async () => {
+    const { tools, state } = createSiteTools(tree(), { lockedTheme: ["colors.primary", "motion"] });
+    const out = JSON.parse(await tool(tools, "set_theme").run({ colors: { primary: "#000000", accent: "#ff0000" }, motion: "lively" }));
+    expect(out.kept).toEqual(["colors.primary", "motion"]);
+    expect(state.tree.theme.colors.primary).not.toBe("#000000");
+    expect(state.tree.theme.colors.accent).toBe("#ff0000");
+    expect(state.tree.theme.motion).toBeUndefined();
+  });
+
+  it("applies additions and empty-field fills, and holds changes to existing data as proposals", async () => {
+    const data = { projects: [{ id: "p1", title: "One", summary: "" }], profile: [{ name: "Asha" }] };
+    const { tools, state } = createSiteTools(tree(), {}, data);
+    await tool(tools, "add_entry").run({ collection: "projects", item: { title: "Two" } });
+    await tool(tools, "update_entry").run({ collection: "profile", fields: { headline: "Designer" } }); // empty → applies
+    const held = JSON.parse(await tool(tools, "update_entry").run({ collection: "profile", fields: { name: "Someone else" } }));
+    expect(held.proposed).toBe(true);
+    await tool(tools, "remove_entry").run({ collection: "projects", id: "p1" });
+    expect(state.data.projects!.map((p) => p.title)).toEqual(["One", "Two"]);
+    expect(state.data.profile![0]).toMatchObject({ name: "Asha", headline: "Designer" });
+    expect(state.proposals.map((p) => p.op.op)).toEqual(["updateItem", "removeItem"]);
+    expect(state.proposals[1]!.description).toMatch(/Remove Projects “One”/);
+  });
+
+  it("applies overwrites directly in collections the owner allowed", async () => {
+    const { tools, state } = createSiteTools(tree(), { allowOverwrite: ["projects"] }, { projects: [{ id: "p1", title: "One" }] });
+    await tool(tools, "update_entry").run({ collection: "projects", id: "p1", fields: { title: "Renamed" } });
+    expect(state.proposals).toHaveLength(0);
+    expect(state.data.projects![0]!.title).toBe("Renamed");
+  });
+
+  it("offers generate_image and fetch_reference only when the platform provides them, within limits", async () => {
+    expect(createSiteTools(tree()).tools.map((t) => t.name)).not.toContain("generate_image");
+    const prompts: string[] = [];
+    const { tools, state } = createSiteTools(tree(), {
+      generateImage: async (r) => (prompts.push(r.prompt), { url: "https://img.test/1.png", width: 1408, height: 768 }),
+      fetchReference: async (url) => ({ url, title: "Ref", description: "", headings: [], navigation: [], sections: [], colors: ["#112233"], fonts: [], text: "" }),
+      maxImages: 1,
+      imagePalette: ["#123456"],
+    });
+    const img = JSON.parse(await tool(tools, "generate_image").run({ prompt: "A bright shop counter with phone cases", aspect: "wide" }));
+    expect(img.url).toBe("https://img.test/1.png");
+    expect(prompts[0]).toMatch(/Colour palette: #123456/);
+    await expect(tool(tools, "generate_image").run({ prompt: "Another picture of the shop front" })).rejects.toThrow(/limit of 1/);
+    expect(state.images).toBe(1);
+    const ref = JSON.parse(await tool(tools, "fetch_reference").run({ url: "https://example.com" }));
+    expect(ref.colors).toEqual(["#112233"]);
+  });
+});

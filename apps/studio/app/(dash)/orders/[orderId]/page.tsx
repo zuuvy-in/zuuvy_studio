@@ -1,11 +1,11 @@
-import { NotFound, STATUS_LABELS, getOrder, isUuid, withTenant } from "@zsite/platform";
+import { NEXT_STEPS, NotFound, STATUS_LABELS, getOrder, isUuid, withTenant } from "@zsite/platform";
 import { notFound } from "next/navigation";
 import { OrderStatusBadge, SyncBadge } from "@/components/badges";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Card, CardHeader, Dl, PageHeader } from "@/components/ui";
 import { dateTime, inr } from "@/lib/format";
 import { requireSession } from "@/lib/session";
-import { retrySyncAction } from "../actions";
+import { advanceAction, retrySyncAction } from "../actions";
 
 export default async function OrderPage({ params }: { params: Promise<{ orderId: string }> }) {
   const { orderId } = await params;
@@ -60,6 +60,27 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
           </Card>
         </div>
         <aside className="space-y-6">
+          {order.sync_state === "not_linked" && NEXT_STEPS[order.status].length > 0 && (
+            <Card>
+              <CardHeader title="Next step" description="You deliver this order yourself. Accepting takes the items off stock for a store managed in Zuuvy Studio." />
+              <div className="flex flex-wrap gap-2 p-5">
+                {NEXT_STEPS[order.status].map((to) => (
+                  <ActionForm key={to} action={advanceAction}>
+                    <input type="hidden" name="orderId" value={order.id} />
+                    <input type="hidden" name="to" value={to} />
+                    <SubmitButton
+                      size="sm"
+                      variant={to === "rejected" || to === "cancelled" ? "danger" : to === "confirmed" ? "primary" : "secondary"}
+                      pending="…"
+                      confirm={to === "rejected" || to === "cancelled" ? `Mark this order ${to}?` : undefined}
+                    >
+                      {{ confirmed: "Accept", rejected: "Decline", packed: "Mark packed", shipped: "Mark shipped", delivered: "Mark delivered", cancelled: "Cancel", pending: "" }[to]}
+                    </SubmitButton>
+                  </ActionForm>
+                ))}
+              </div>
+            </Card>
+          )}
           <Card>
             <CardHeader title="Customer" />
             <Dl items={[["Name", order.customer.name], ["Mobile", order.customer.phone], ["Address", order.customer.address]]} />
@@ -75,7 +96,7 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
               ]}
             />
             {order.sync_error && <p className="border-t border-rose-100 bg-rose-50 px-5 py-3 text-sm text-rose-800">{order.sync_error}</p>}
-            {(order.sync_state === "failed" || order.sync_state === "not_linked") && (
+            {(order.sync_state === "failed" || order.sync_state === "not_linked") && order.lines.some((l) => l.source === "zuuvy") && (
               <ActionForm action={retrySyncAction} className="border-t border-slate-100 px-5 py-4">
                 <input type="hidden" name="orderId" value={order.id} />
                 <SubmitButton size="sm" pending="Queuing…">Send to Zuuvy</SubmitButton>

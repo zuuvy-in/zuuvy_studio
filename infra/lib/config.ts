@@ -23,6 +23,11 @@ export type DeployConfig = {
   dbEngineVersion: string;
   dbMinAcu: number;
   dbMaxAcu: number;
+  /** Send email through SES. Off until the domain's DKIM records are in and SES has left the sandbox. */
+  emailEnabled: boolean;
+  /** Bedrock image model and its region (Nova Canvas is not served in Mumbai). */
+  imageModel: string;
+  imageRegion: string;
 };
 
 function required(name: string): string {
@@ -64,5 +69,8 @@ export function loadConfig(): DeployConfig {
     // `||`, not `??`: an unset GitHub variable arrives as "", which must mean the default.
     dbMinAcu: Number(process.env.DB_MIN_ACU || 0.5),
     dbMaxAcu: Number(process.env.DB_MAX_ACU || 4),
+    emailEnabled: process.env.EMAIL_ENABLED === "true" || process.env.EMAIL_ENABLED === "1",
+    imageModel: process.env.ZSITE_IMAGE_MODEL || "amazon.nova-canvas-v1:0",
+    imageRegion: process.env.ZSITE_IMAGE_REGION || "us-east-1",
   };
 }

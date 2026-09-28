@@ -8,14 +8,17 @@ import { Icon, buttonClass, cx } from "./ui";
 
 const SUGGESTIONS = [
   "Make it feel more premium with a dark theme",
+  "Add pictures to every section and make it lively with animation",
   "Add an FAQ about delivery, returns and payment on delivery",
   "Rewrite the home page copy to be warmer and more local",
   "Add a testimonials section and an About page",
 ];
 
-function ComposerBody({ disabled }: { disabled: boolean }) {
+function ComposerBody({ disabled, accept }: { disabled: boolean; accept: string }) {
   const { pending } = useFormStatus();
   const [prompt, setPrompt] = useState("");
+  const [files, setFiles] = useState<string[]>([]);
+  const [showLinks, setShowLinks] = useState(false);
   return (
     <>
       <textarea
@@ -32,6 +35,33 @@ function ComposerBody({ disabled }: { disabled: boolean }) {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit();
         }}
       />
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+        <label className={cx("inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-slate-300 bg-white px-2.5 py-1.5 font-medium text-slate-600 hover:border-brand-400 hover:text-brand-700", (disabled || pending) && "pointer-events-none opacity-50")}>
+          <Icon name="plus" className="h-3.5 w-3.5" /> Attach files
+          <input
+            type="file"
+            name="files"
+            multiple
+            accept={accept}
+            className="sr-only"
+            onChange={(e) => setFiles([...(e.currentTarget.files ?? [])].map((f) => f.name))}
+          />
+        </label>
+        <button type="button" onClick={() => setShowLinks((v) => !v)} className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 bg-white px-2.5 py-1.5 font-medium text-slate-600 hover:border-brand-400 hover:text-brand-700">
+          <Icon name="external" className="h-3.5 w-3.5" /> Reference websites
+        </button>
+        {files.length > 0 && <span className="text-slate-500">{files.join(", ")}</span>}
+        <span className="text-slate-400">PDF, Word, Excel, CSV, text or screenshots — up to 5 files, 4.5 MB each</span>
+      </div>
+      {showLinks && (
+        <textarea
+          name="links"
+          rows={2}
+          disabled={disabled || pending}
+          placeholder={"One address per line — the AI looks at them for layout, tone and colours\nhttps://example.com"}
+          className="field mt-2 resize-y text-sm"
+        />
+      )}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {!pending &&
           SUGGESTIONS.map((s) => (
@@ -62,6 +92,7 @@ export function Composer({
   aiReady,
   setupHint,
   title = "Describe a change",
+  accept = "",
 }: {
   action: (state: ActionState, form: FormData) => Promise<ActionState>;
   siteId: string;
@@ -70,6 +101,8 @@ export function Composer({
   /** What to configure when the AI is not ready, for the provider in use. */
   setupHint?: string;
   title?: string;
+  /** File types the composer takes as attachments. */
+  accept?: string;
 }) {
   const [state, formAction] = useActionState(action, null);
   return (
@@ -82,7 +115,7 @@ export function Composer({
         </p>
         <p className="text-xs text-slate-500">Based on v{baseNumber} · nothing goes live until you publish</p>
       </div>
-      <ComposerBody disabled={!aiReady} />
+      <ComposerBody disabled={!aiReady} accept={accept} />
       {!aiReady && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">
           {setupHint ?? "AI editing is not configured."}

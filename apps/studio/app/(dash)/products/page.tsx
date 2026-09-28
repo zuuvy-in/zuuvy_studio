@@ -1,4 +1,5 @@
-import { listProducts, withTenant } from "@zsite/platform";
+import { listProducts, managesProducts, withTenant } from "@zsite/platform";
+import Link from "next/link";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { ago, inr } from "@/lib/format";
 import { requireSession } from "@/lib/session";
@@ -8,13 +9,22 @@ export const metadata = { title: "Products" };
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ q?: string; hidden?: string }> }) {
   const q = await searchParams;
   const session = await requireSession();
-  const products = await withTenant(session.tenant.id, (tx) => listProducts(tx, { q: q.q, includeHidden: q.hidden === "1" }));
+  const { products, manages } = await withTenant(session.tenant.id, async (tx) => ({
+    products: await listProducts(tx, { q: q.q, includeHidden: q.hidden === "1" }),
+    manages: await managesProducts(tx),
+  }));
   return (
     <>
       <PageHeader
         title="Products"
-        description="What your store sells. Products from Zuuvy are managed in Zuuvy — prices, stock and whether they are listed online all come from there."
+        description="What your stores sell. Products you add here are managed here; products from a data source such as Zuuvy are managed there — prices, stock and listing all come from it."
+        actions={manages ? <ButtonLink href="/products/new">Add product</ButtonLink> : undefined}
       />
+      {!manages && (
+        <p className="mb-4 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
+          To add products here, set a store's inventory to <strong>Zuuvy Studio</strong> or <strong>None</strong> in its site settings.
+        </p>
+      )}
       <form className="mb-4 flex flex-wrap gap-2">
         <input name="q" defaultValue={q.q} placeholder="Search name or category" className="field max-w-xs" />
         <label className="flex items-center gap-2 text-sm text-slate-600">
@@ -24,7 +34,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
       </form>
       <Card className="overflow-x-auto">
         {products.length === 0 ? (
-          <EmptyState icon="box" title="No products" body="Connect Zuuvy and mark products for online sale there." action={<ButtonLink href="/integrations/zuuvy">Connect Zuuvy</ButtonLink>} />
+          <EmptyState icon="box" title="No products" body={manages ? "Add your first product, or connect a data source." : "Connect Zuuvy and mark products for online sale there."} action={manages ? <ButtonLink href="/products/new">Add product</ButtonLink> : <ButtonLink href="/integrations/zuuvy">Connect Zuuvy</ButtonLink>} />
         ) : (
           <table className="w-full text-sm">
             <thead className="border-b border-slate-100 text-left text-xs text-slate-500">
@@ -49,8 +59,12 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                         <div className="h-10 w-10 rounded-md bg-slate-100" />
                       )}
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-slate-900">{p.name}</p>
-                        <p className="text-xs text-slate-500">synced {ago(p.synced_at)}</p>
+                        {p.source === "native" ? (
+                          <Link href={`/products/${p.id}`} className="truncate font-medium text-slate-900 hover:underline">{p.name}</Link>
+                        ) : (
+                          <p className="truncate font-medium text-slate-900">{p.name}</p>
+                        )}
+                        <p className="text-xs text-slate-500">{p.source === "native" ? `updated ${ago(p.updated_at)}` : `synced ${ago(p.synced_at)}`}</p>
                       </div>
                     </div>
                   </td>
@@ -60,7 +74,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                     {p.mrp !== null && p.price !== null && p.mrp > p.price && <span className="ml-1 text-xs font-normal text-slate-400 line-through">{inr(p.mrp)}</span>}
                   </td>
                   <td className="px-3 py-3 text-right">{p.stock === null ? "—" : p.stock}</td>
-                  <td className="px-3 py-3"><Badge tone={p.source === "zuuvy" ? "brand" : "gray"}>{p.source === "zuuvy" ? "Zuuvy" : "Native"}</Badge></td>
+                  <td className="px-3 py-3"><Badge tone={p.source === "zuuvy" ? "brand" : "gray"}>{p.source === "zuuvy" ? "Zuuvy" : "Studio"}</Badge></td>
                   <td className="px-5 py-3">
                     {!p.active ? <Badge>Hidden</Badge> : p.in_stock ? <Badge tone="green">On sale</Badge> : <Badge tone="amber">Out of stock</Badge>}
                   </td>

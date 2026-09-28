@@ -54,5 +54,7 @@ export function parseHost(
       return sub.includes(".") ? null : { subdomain: sub };
     }
   }
-  return { domain: bare.replace(/^www\./, "") };
+  // As typed: www.shop.in and shop.in can be two connected domains. The
+  // storefront tries the other spelling when only one is connected.
+  return { domain: bare };
 }
