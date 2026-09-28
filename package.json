@@ -24,7 +24,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w @zsite/studio -w @zsite/renderer",
     "build": "npm run build -w @zsite/studio -w @zsite/renderer",
-    "admin:create": "tsx scripts/create-superadmin.ts"
+    "admin:create": "tsx scripts/create-superadmin.ts",
+    "db:seed:shop": "tsx scripts/seed-shop-demo.ts"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

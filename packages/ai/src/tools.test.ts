@@ -146,3 +146,12 @@ describe("an answer that claims changes it never made", () => {
     expect(r.usage).toMatchObject({ input_tokens: 20, requests: 2 });
   });
 });
+
+describe("commerce tool", () => {
+  it("is offered to stores only, and changes the cart and checkout settings", async () => {
+    expect(createSiteTools(tree()).tools.map((t) => t.name)).not.toContain("set_commerce");
+    const { tools, state } = createSiteTools(tree(), { commerceTools: true });
+    await tools.find((t) => t.name === "set_commerce")!.run({ cart: { style: "drawer", icon: "basket" }, account: { placement: "footer" } });
+    expect(state.tree.commerce).toMatchObject({ cart: { style: "drawer", icon: "basket" }, account: { placement: "footer", show: true } });
+  });
+});

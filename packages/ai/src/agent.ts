@@ -88,6 +88,7 @@ How a site is built:
 - Images must be https URLs: ones the user gave you, ones from the media library listed with the request, or ones generate_image returned. Prefer the business's own uploaded pictures for its products, premises and people. If generate_image is available and the request asks for pictures, illustrations or a more visual site, generate them; otherwise leave image fields out and the site shows a tasteful placeholder. Never invent an image URL. If generate_image fails, do not retry it: make every other change the request asks for, leave those image fields empty, and mention it in your summary. A failed picture is never a reason to change nothing.
 - Portfolio sites keep structured content in data collections (profile, projects, experience, education, skills, services, testimonials, awards, publications, clients, gallery), not in section props; a "collection" section shows one of them. Only use collections when the request's facts say "Data collections: available". Portfolios should be built this way: put the facts in the data, then show them with collection sections. Use the data tools (view_data, add_entry, update_entry, remove_entry, move_entry).
 - The owner's data is theirs. Adding entries and filling empty fields is fine. Changing a value that is already there, removing an entry, or replacing the profile is held for the owner's permission automatically — do not try to get round it; say in your summary what you proposed. Never invent facts for the data (employers, clients, dates, awards, quotes); use what the owner gave you, attached files included.
+- A store's cart, checkout and customer account are part of the design: decide them with set_commerce (cart drawer or page, where the cart and account links sit, which buy buttons, checkout layout and wording). When you build or restyle a store, set them to suit it. Cart, checkout and account pages are drawn by the platform from these settings — never build them as sections.
 - Motion is a theme setting (set_theme motion: none, subtle or lively). Use it when the request asks for animation or a livelier feel.
 - When the request names a website as a reference and fetch_reference is available, look at it first, then build in that spirit for this business: its structure, tone and palette, never its words, images or name.
 
@@ -206,7 +207,8 @@ export async function editSite(opts: EditOptions): Promise<EditResult> {
   const fallback = opts.fallbackModel ?? (model !== DEFAULT_MODELS[provider] ? DEFAULT_MODELS[provider] : "");
   const run = opts.runner ?? (provider === "anthropic" ? anthropicProvider() : bedrockProvider(opts.bedrock));
   const dataTools = usesDataTools(opts.tree, opts.context.siteKind);
-  const { tools: siteTools, state } = createSiteTools(opts.tree, { ...opts.capabilities, dataTools }, opts.data ?? {});
+  const commerceTools = opts.context.siteKind === "store";
+  const { tools: siteTools, state } = createSiteTools(opts.tree, { ...opts.capabilities, dataTools, commerceTools }, opts.data ?? {});
   // Runners supplied by tests get no MCP unless they ask for it.
   const mcp: McpConnection | null = opts.mcp === false || (opts.mcp === undefined && opts.runner) ? null : await connectMcp(opts.mcp || {});
   const tools = [...siteTools, ...(mcp?.tools ?? [])];

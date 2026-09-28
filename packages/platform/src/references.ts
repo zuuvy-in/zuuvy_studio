@@ -153,6 +153,68 @@ export async function fetchReferenceHtml(raw: string): Promise<{ url: string; ht
 }
 
 // ---------------------------------------------------------------------------
+// Plugins: the one other place the server calls an address a business gave
+// it. Same guard — public addresses only, DNS pinned into the socket — and
+// tighter still: https only, no redirects at all, a small JSON answer, and a
+// few seconds, because a customer's cart is waiting on it.
+// ---------------------------------------------------------------------------
+
+/** Checks a plugin address when it is saved. */
+export function checkPluginUrl(raw: string): URL {
+  const url = checkReferenceUrl(raw);
+  if (url.protocol !== "https:") throw new UserError("A plugin address must start with https://.");
+  return url;
+}
+
+export async function postJson(
+  raw: string,
+  body: string,
+  headers: Record<string, string>,
+  opts: { timeoutMs?: number; maxBytes?: number } = {},
+): Promise<{ status: number; json: unknown }> {
+  const url = checkPluginUrl(raw);
+  const timeout = opts.timeoutMs ?? 3000;
+  const max = opts.maxBytes ?? 64_000;
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      url,
+      {
+        method: "POST",
+        lookup: safeLookup as never,
+        timeout,
+        headers: { "content-type": "application/json", "user-agent": "ZuuvySitesPlugin/1.0", "content-length": Buffer.byteLength(body), ...headers },
+      },
+      (res) => {
+        const status = res.statusCode ?? 0;
+        let size = 0;
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => {
+          size += c.length;
+          if (size > max) {
+            req.destroy(new Error("The plugin's answer was too large."));
+            return;
+          }
+          chunks.push(c);
+        });
+        res.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          if (status >= 300) return reject(new Error(`The plugin answered ${status}.`));
+          try {
+            resolve({ status, json: text ? JSON.parse(text) : {} });
+          } catch {
+            reject(new Error("The plugin did not answer with JSON."));
+          }
+        });
+        res.on("error", reject);
+      },
+    );
+    req.on("timeout", () => req.destroy(new Error(`The plugin took longer than ${timeout / 1000}s.`)));
+    req.on("error", (e: NodeJS.ErrnoException) => reject(e.code === "EZSITE_PRIVATE" ? new Error("The plugin address is not a public website.") : e));
+    req.end(body);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Reading the page. A regex pass rather than a DOM: this runs on untrusted
 // markup and needs only a designer's notes, so nothing here executes or
 // resolves anything the page names.

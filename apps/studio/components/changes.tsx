@@ -6,6 +6,7 @@ const KIND: Record<Change["kind"], [string, Tone]> = {
   theme: ["Changed", "violet"],
   nav: ["Changed", "gray"],
   footer: ["Changed", "gray"],
+  commerce: ["Changed", "violet"],
   "page-added": ["Added", "green"],
   "page-removed": ["Removed", "red"],
   "page-changed": ["Changed", "gray"],

@@ -79,6 +79,8 @@ export type ToolCapabilities = {
    * already shows one). Off: no data tools, and no new `collection` sections.
    */
   dataTools?: boolean;
+  /** A store: the cart, checkout and account presentation can be set (set_commerce). */
+  commerceTools?: boolean;
   /** Per edit, so one prompt cannot spend a month of image budget. */
   maxImages?: number;
   maxReferences?: number;
@@ -293,6 +295,24 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
       run: (i) => apply({ op: "setFooter", ...i }),
     }),
   ];
+
+  if (caps.commerceTools) tools.push(
+    siteTool({
+      name: "set_commerce",
+      description:
+        "Decide how this store sells: the cart (drawer or page, icon, in the header or a floating button, optional label), the product buttons (add to cart, buy now, both), the checkout (one page or steps, summary beside or above, note field, heading, a reassurance line under Place order) and the customer account link (shown or not, header or footer, label). Send only what changes. Fit it to the store: a few big-ticket items suit buy now and a one-page checkout; a large catalogue suits a cart drawer and add to cart.",
+      inputSchema: z.object({
+        cart: z.object({ style: z.enum(["drawer", "page"]), icon: z.enum(["bag", "cart", "basket"]), placement: z.enum(["nav", "floating"]), label: z.string().max(20) }).partial().optional(),
+        buy: z.enum(["add_to_cart", "buy_now", "both"]).optional(),
+        checkout: z
+          .object({ layout: z.enum(["single", "steps"]), summary: z.enum(["side", "top"]), askNote: z.boolean(), heading: z.string().max(80), reassurance: z.string().max(200) })
+          .partial()
+          .optional(),
+        account: z.object({ show: z.boolean(), placement: z.enum(["nav", "footer"]), label: z.string().max(20) }).partial().optional(),
+      }),
+      run: (i) => apply({ op: "setCommerce", commerce: i }),
+    }),
+  );
 
   if (caps.dataTools !== false) tools.push(
     siteTool({

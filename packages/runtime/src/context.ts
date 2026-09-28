@@ -1,4 +1,5 @@
 import type { SiteData } from "@zsite/core";
+import type { ReactNode } from "react";
 
 /** What a block needs to know beyond its own props. */
 export type ProductView = {
@@ -14,6 +15,21 @@ export type ProductView = {
   unitLabel: string | null;
   /** The store takes orders beyond its stock, so out of stock still sells. */
   backorders?: boolean;
+  /** The variant group this product belongs to: a grid shows the group as one card. */
+  group?: { id: string; name: string; images: string[] };
+};
+
+/** A store's live state for the header: the cart and who is signed in. */
+export type ShopContext = {
+  cartCount: number;
+  /** First name of the signed-in customer; null when nobody is. */
+  signedIn: string | null;
+  /** The cart drawer's contents, when the store uses a drawer. */
+  drawer?: ReactNode;
+  /** Open the drawer on this page (just after something was added). */
+  drawerOpen?: boolean;
+  /** Where closing the drawer goes: this page without the open flag. */
+  closeHref?: string;
 };
 
 export type RenderContext = {
@@ -25,6 +41,12 @@ export type RenderContext = {
   href: (href: string) => string;
   /** Where a product card goes; absent = cards are not links. */
   productHref?: (productId: string) => string;
+  /** Where a variant group's card goes. */
+  groupHref?: (groupId: string) => string;
+  /** A store: cart and account in the header. Absent on sites that do not sell. */
+  shop?: ShopContext;
+  /** A quick "add to cart" control under a product card, when the store offers one. */
+  cardAction?: (product: ProductView) => ReactNode;
 };
 
 /** Internal links are prefixed with `base`; everything else passes through. */

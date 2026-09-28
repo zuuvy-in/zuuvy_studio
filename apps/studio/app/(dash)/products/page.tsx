@@ -1,5 +1,8 @@
-import { listProducts, managesProducts, withTenant } from "@zsite/platform";
+import { listGroups, listProducts, managesProducts, variantLabel, withTenant } from "@zsite/platform";
 import Link from "next/link";
+import { ActionForm, SubmitButton } from "@/components/forms";
+import { Tabs } from "@/components/nav";
+import { groupSelectedAction } from "./actions";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { ago, inr } from "@/lib/format";
 import { requireSession } from "@/lib/session";
@@ -9,10 +12,12 @@ export const metadata = { title: "Products" };
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ q?: string; hidden?: string }> }) {
   const q = await searchParams;
   const session = await requireSession();
-  const { products, manages } = await withTenant(session.tenant.id, async (tx) => ({
+  const { products, manages, groups } = await withTenant(session.tenant.id, async (tx) => ({
     products: await listProducts(tx, { q: q.q, includeHidden: q.hidden === "1" }),
     manages: await managesProducts(tx),
+    groups: await listGroups(tx),
   }));
+  const byId = new Map(groups.map((g) => [g.id, g]));
   return (
     <>
       <PageHeader
@@ -20,6 +25,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
         description="What your stores sell. Products you add here are managed here; products from a data source such as Zuuvy are managed there — prices, stock and listing all come from it."
         actions={manages ? <ButtonLink href="/products/new">Add product</ButtonLink> : undefined}
       />
+      <Tabs tabs={[{ href: "/products", label: "Products", exact: true }, { href: "/products/groups", label: `Variant groups (${groups.length})` }]} />
       {!manages && (
         <p className="mb-4 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
           To add products here, set a store's inventory to <strong>Zuuvy Studio</strong> or <strong>None</strong> in its site settings.
@@ -32,6 +38,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
         </label>
         <button className="rounded-lg bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-50">Filter</button>
       </form>
+      <ActionForm action={groupSelectedAction}>
       <Card className="overflow-x-auto">
         {products.length === 0 ? (
           <EmptyState icon="box" title="No products" body={manages ? "Add your first product, or connect a data source." : "Connect Zuuvy and mark products for online sale there."} action={manages ? <ButtonLink href="/products/new">Add product</ButtonLink> : <ButtonLink href="/integrations/zuuvy">Connect Zuuvy</ButtonLink>} />
@@ -39,7 +46,8 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
           <table className="w-full text-sm">
             <thead className="border-b border-slate-100 text-left text-xs text-slate-500">
               <tr>
-                <th className="px-5 py-3 font-medium">Product</th>
+                <th className="w-8 py-3 pl-5"><span className="sr-only">Select</span></th>
+                <th className="px-3 py-3 font-medium">Product</th>
                 <th className="px-3 py-3 font-medium">Category</th>
                 <th className="px-3 py-3 text-right font-medium">Price</th>
                 <th className="px-3 py-3 text-right font-medium">Stock</th>
@@ -50,7 +58,10 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
             <tbody className="divide-y divide-slate-100">
               {products.map((p) => (
                 <tr key={p.id} className={p.active ? "" : "opacity-60"}>
-                  <td className="px-5 py-3">
+                  <td className="py-3 pl-5">
+                    <input type="checkbox" name="ids" value={p.id} aria-label={`Select ${p.name}`} />
+                  </td>
+                  <td className="px-3 py-3">
                     <div className="flex items-center gap-3">
                       {p.images[0] ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -64,7 +75,19 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                         ) : (
                           <p className="truncate font-medium text-slate-900">{p.name}</p>
                         )}
-                        <p className="text-xs text-slate-500">{p.source === "native" ? `updated ${ago(p.updated_at)}` : `synced ${ago(p.synced_at)}`}</p>
+                        <p className="text-xs text-slate-500">
+                          {p.group_id ? (
+                            <Link href={`/products/groups/${p.group_id}`} className="text-brand-700 hover:underline">
+                              {byId.get(p.group_id)?.name}
+                              {/* In the group's option order: jsonb does not keep the keys' order. */}
+                              {Object.keys(p.options).length > 0 && ` · ${variantLabel(byId.get(p.group_id)?.options ?? [], p.options)}`}
+                            </Link>
+                          ) : p.source === "native" ? (
+                            `updated ${ago(p.updated_at)}`
+                          ) : (
+                            `synced ${ago(p.synced_at)}`
+                          )}
+                        </p>
                       </div>
                     </div>
                   </td>
@@ -84,6 +107,23 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
           </table>
         )}
       </Card>
+      {products.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-end gap-3 rounded-xl bg-white p-4 ring-1 ring-slate-200">
+          <div>
+            <p className="text-sm font-medium text-slate-900">Group the ticked products as variants</p>
+            <p className="text-xs text-slate-500">For one thing sold in several versions — colours, sizes, fits. Then set which version each one is.</p>
+          </div>
+          <select name="groupId" className="field w-auto" defaultValue="">
+            <option value="">New group…</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+          <input name="groupName" placeholder="New group's name, e.g. Linen shirt" className="field w-64" />
+          <SubmitButton pending="Grouping…">Group</SubmitButton>
+        </div>
+      )}
+      </ActionForm>
     </>
   );
 }

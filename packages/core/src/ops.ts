@@ -18,6 +18,8 @@ import {
   Theme,
   describeIssues,
   newId,
+  Commerce,
+  DEFAULT_COMMERCE,
 } from "./tree";
 
 export class OpError extends Error {
@@ -33,6 +35,15 @@ const DeepPartialTheme = z.object({
 
 export const Operation = z.discriminatedUnion("op", [
   z.object({ op: z.literal("setTheme"), theme: DeepPartialTheme }),
+  z.object({
+    op: z.literal("setCommerce"),
+    commerce: z.object({
+      cart: Commerce.shape.cart.unwrap().partial().optional(),
+      buy: Commerce.shape.buy.unwrap().optional(),
+      checkout: Commerce.shape.checkout.unwrap().partial().optional(),
+      account: Commerce.shape.account.unwrap().partial().optional(),
+    }),
+  }),
   z.object({
     op: z.literal("setMeta"),
     title: z.string().max(100).optional(),
@@ -120,6 +131,16 @@ function applyOne(tree: SiteTree, raw: Operation): void {
         ...((op.theme.motion ?? tree.theme.motion) ? { motion: op.theme.motion ?? tree.theme.motion } : {}),
       };
       return;
+    case "setCommerce": {
+      const now = tree.commerce ?? DEFAULT_COMMERCE;
+      tree.commerce = Commerce.parse({
+        cart: { ...now.cart, ...op.commerce.cart },
+        buy: op.commerce.buy ?? now.buy,
+        checkout: { ...now.checkout, ...op.commerce.checkout },
+        account: { ...now.account, ...op.commerce.account },
+      });
+      return;
+    }
     case "setMeta":
       if (op.title !== undefined) tree.meta.title = op.title;
       if (op.description !== undefined) tree.meta.description = op.description;

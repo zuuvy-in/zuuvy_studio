@@ -25,12 +25,21 @@ export type Product = {
   active: boolean;
   synced_at: Date | null;
   updated_at: Date;
+  /** The variant group this product is one combination of, if any. */
+  group_id: string | null;
+  /** This product's value for each of its group's options: { Colour: "Red", Size: "M" }. */
+  options: Record<string, string>;
   /** Set by the storefront: this store takes orders beyond its stock (sites.out_of_stock = 'sell'). */
   backorders?: boolean;
+  /** Set by the storefront: the group, for showing variants as one card. */
+  group?: GroupSummary;
 };
 
+export type GroupSummary = { id: string; name: string; images: string[]; options: GroupOption[] };
+export type GroupOption = { name: string; values: string[] };
+
 export const PRODUCT_COLUMNS = `id, source, external_id, name, description, category, price, mrp, currency, unit_label,
-  images, in_stock, stock, active, synced_at, updated_at`;
+  images, in_stock, stock, active, synced_at, updated_at, group_id, options`;
 
 export async function upsertProduct(tx: Tx, source: "zuuvy", item: CatalogItem): Promise<void> {
   await tx.query(

@@ -10,7 +10,7 @@ import type { Page, Section, SiteTree } from "./tree";
 export type FieldChange = { field: string; before: unknown; after: unknown };
 
 export type Change =
-  | { kind: "meta" | "theme" | "nav" | "footer"; label: string; fields: FieldChange[] }
+  | { kind: "meta" | "theme" | "nav" | "footer" | "commerce"; label: string; fields: FieldChange[] }
   | { kind: "page-added" | "page-removed"; label: string; page: string }
   | { kind: "page-changed"; label: string; page: string; fields: FieldChange[] }
   | {
@@ -95,10 +95,10 @@ function pageLabel(page: Page) {
 export function diffTrees(from: SiteTree, to: SiteTree): Change[] {
   const changes: Change[] = [];
 
-  for (const kind of ["meta", "theme", "nav", "footer"] as const) {
-    const fields = fieldChanges(from[kind], to[kind]);
+  for (const kind of ["meta", "theme", "nav", "footer", "commerce"] as const) {
+    const fields = fieldChanges(from[kind] ?? {}, to[kind] ?? {});
     if (fields.length) {
-      const label = { meta: "Site details", theme: "Theme", nav: "Navigation", footer: "Footer" }[kind];
+      const label = { meta: "Site details", theme: "Theme", nav: "Navigation", footer: "Footer", commerce: "Cart and checkout" }[kind];
       changes.push({ kind, label, fields });
     }
   }

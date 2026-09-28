@@ -3,11 +3,12 @@
  * published tree and data. Resolution goes through SECURITY DEFINER lookups
  * that return ids only; everything after runs inside the tenant's context.
  */
-import { type SiteData, type SiteTree, parseHost } from "@zsite/core";
+import { type SiteData, type SiteKind, type SiteTree, parseHost } from "@zsite/core";
 import { type Product, storefrontProducts } from "./catalog";
 import { config } from "./config";
 import { type Tx, isUuid, withGlobal, withTenant } from "./db";
 import { isPlatformHost } from "./domains";
+import { type ProductGroup, getGroup, groupSummaries } from "./groups";
 import { type SiteInventory, sellsOutOfStock, siteInventory, sourcesFor, tracksStock } from "./inventory";
 import { type PublicOrder, publicOrder } from "./orders";
 
@@ -37,7 +38,7 @@ export async function resolveHost(host: string): Promise<ResolvedSite | null> {
 }
 
 export type StorefrontSite = {
-  site: { id: string; name: string; subdomain: string; runtime_version: string };
+  site: { id: string; name: string; subdomain: string; runtime_version: string; kind: SiteKind };
   tenant: { name: string };
   version: { id: string; number: number };
   tree: SiteTree;
@@ -51,13 +52,14 @@ export async function loadPublished(r: ResolvedSite): Promise<StorefrontSite | n
       name: string;
       subdomain: string;
       runtime_version: string;
+      kind: SiteKind;
       version_id: string | null;
       number: number | null;
       tree: SiteTree | null;
       data: SiteData | null;
       tenant_name: string;
     }>(
-      `select s.id, s.name, s.subdomain, s.runtime_version, v.id as version_id, v.number, v.tree, v.data, t.name as tenant_name
+      `select s.id, s.name, s.subdomain, s.runtime_version, s.kind, v.id as version_id, v.number, v.tree, v.data, t.name as tenant_name
          from sites s
          join tenants t on t.id = s.tenant_id
          left join site_versions v on v.id = s.published_version_id
@@ -66,7 +68,7 @@ export async function loadPublished(r: ResolvedSite): Promise<StorefrontSite | n
     );
     if (!row || !row.version_id || !row.tree) return null;
     return {
-      site: { id: row.id, name: row.name, subdomain: row.subdomain, runtime_version: row.runtime_version },
+      site: { id: row.id, name: row.name, subdomain: row.subdomain, runtime_version: row.runtime_version, kind: row.kind },
       tenant: { name: row.tenant_name },
       version: { id: row.version_id, number: row.number! },
       tree: row.tree,
@@ -87,8 +89,8 @@ export async function productsForTree(tx: Tx, tree: SiteTree, siteId?: string): 
   const inv = await siteInventory(tx, siteId);
   const sources = sourcesFor(inv);
   if (!sources) return [];
-  const rows = await storefrontProducts(tx, { limit: 200, sources });
-  return rows.map((p) => asSold(p, inv)).filter((p): p is Product => p !== null);
+  const rows = (await storefrontProducts(tx, { limit: 200, sources })).map((p) => asSold(p, inv)).filter((p): p is Product => p !== null);
+  return withGroups(tx, rows);
 }
 
 /**
@@ -96,10 +98,38 @@ export async function productsForTree(tx: Tx, tree: SiteTree, siteId?: string): 
  * as sold out; a store that hides out-of-stock products leaves them out; one
  * that sells them marks every product as taking orders beyond its stock.
  */
-function asSold(p: Product, inv: SiteInventory): Product | null {
+export function asSold(p: Product, inv: SiteInventory): Product | null {
   if (!tracksStock(inv)) return { ...p, in_stock: true, stock: null };
   if (inv.out_of_stock === "hide" && !p.in_stock) return null;
   return sellsOutOfStock(inv) ? { ...p, backorders: true } : p;
+}
+
+/** Variants carry their group, so a grid can show a group as one card. */
+async function withGroups(tx: Tx, rows: Product[]): Promise<Product[]> {
+  const groups = await groupSummaries(tx, rows.flatMap((p) => (p.group_id ? [p.group_id] : [])));
+  return rows.map((p) => {
+    const group = p.group_id ? groups.get(p.group_id) : undefined;
+    return group ? { ...p, group } : p;
+  });
+}
+
+/** A variant group as this store sells it: the group and its variants, each as sold. Null when nothing in it is for sale here. */
+export async function storefrontGroup(r: ResolvedSite, groupId: string): Promise<{ group: ProductGroup; variants: Product[] } | null> {
+  if (!isUuid(groupId)) return null;
+  return withTenant(r.tenantId, async (tx) => {
+    const found = await getGroup(tx, groupId).catch(() => null);
+    if (!found || !found.active) return null;
+    const inv = await siteInventory(tx, r.siteId);
+    const sources = sourcesFor(inv);
+    if (!sources) return null;
+    const variants = found.variants
+      .filter((p) => p.active && p.price !== null && sources.includes(p.source))
+      .map((p) => asSold(p, inv))
+      .filter((p): p is Product => p !== null);
+    if (!variants.length) return null;
+    const { variants: _, ...group } = found;
+    return { group, variants };
+  });
 }
 
 export async function storefrontData(r: ResolvedSite, tree: SiteTree): Promise<Product[]> {
@@ -111,7 +141,7 @@ export async function storefrontProduct(r: ResolvedSite, productId: string): Pro
   return withTenant(r.tenantId, async (tx) => {
     const rows = await tx.query<Product>(
       `select id, source, external_id, name, description, category, price, mrp, currency, unit_label, images,
-              in_stock, stock, active, synced_at, updated_at
+              in_stock, stock, active, synced_at, updated_at, group_id, options
          from products where id = $1 and active and price is not null`,
       [productId],
     );

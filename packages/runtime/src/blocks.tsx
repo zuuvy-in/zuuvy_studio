@@ -5,7 +5,7 @@
  */
 import type { BlockProps, BlockType, Link as LinkT } from "@zsite/core";
 import type { ReactNode } from "react";
-import type { RenderContext } from "./context";
+import type { ProductView, RenderContext } from "./context";
 
 type P<T extends BlockType> = { props: BlockProps<T>; ctx: RenderContext; id: string };
 
@@ -110,10 +110,46 @@ function Features({ props, id }: P<"features">) {
   );
 }
 
-const inr = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+const inr = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
+
+type Card = ProductView & { groupCard?: { id: string; variants: number; fromPrice: boolean } };
+
+/** Variants of one group become one card: the group's name and photo, the lowest price, in stock if any variant is. */
+export function productCards(products: ProductView[]): Card[] {
+  const out: Card[] = [];
+  const groups = new Map<string, Card>();
+  for (const p of products) {
+    if (!p.group) {
+      out.push(p);
+      continue;
+    }
+    const seen = groups.get(p.group.id);
+    if (!seen) {
+      const card: Card = {
+        ...p,
+        id: p.group.id,
+        name: p.group.name,
+        images: [...p.group.images, ...p.images],
+        groupCard: { id: p.group.id, variants: 1, fromPrice: false },
+      };
+      groups.set(p.group.id, card);
+      out.push(card);
+      continue;
+    }
+    seen.groupCard!.variants++;
+    if (p.price !== null && (seen.price === null || p.price !== seen.price)) seen.groupCard!.fromPrice = true;
+    if (p.price !== null && (seen.price === null || p.price < seen.price)) {
+      seen.price = p.price;
+      seen.mrp = p.mrp;
+    }
+    if (p.inStock) seen.inStock = true;
+    if (!seen.images.length) seen.images = p.images;
+  }
+  return out;
+}
 
 function ProductGrid({ props, ctx, id }: P<"productGrid">) {
-  let items = ctx.products.filter((p) => !props.category || (p.category ?? "").toLowerCase() === props.category.toLowerCase());
+  let items = productCards(ctx.products).filter((p) => !props.category || (p.category ?? "").toLowerCase() === props.category.toLowerCase());
   items = [...items].sort((a, b) => {
     switch (props.sort) {
       case "price_asc":
@@ -133,13 +169,13 @@ function ProductGrid({ props, ctx, id }: P<"productGrid">) {
       {items.length === 0 ? (
         <p className="zs-empty">
           {ctx.mode === "preview"
-            ? "No products yet — connect Zuuvy in Integrations and they appear here."
+            ? "No products yet — add them under Products, or connect Zuuvy in Integrations."
             : "New products are on their way. Check back soon."}
         </p>
       ) : (
         <div className={`zs-grid zs-cols-${props.columns} zs-products`}>
           {items.map((p) => {
-            const href = ctx.productHref?.(p.id);
+            const href = p.groupCard ? ctx.groupHref?.(p.groupCard.id) : ctx.productHref?.(p.id);
             const body = (
               <>
                 <div className="zs-product-media">
@@ -151,20 +187,26 @@ function ProductGrid({ props, ctx, id }: P<"productGrid">) {
                   <h3>{p.name}</h3>
                   {props.showPrices && p.price !== null && (
                     <p className="zs-price">
+                      {p.groupCard?.fromPrice && <span className="zs-from">from </span>}
                       {inr(p.price)}
                       {p.mrp !== null && p.mrp > p.price && <s>{inr(p.mrp)}</s>}
                     </p>
                   )}
+                  {p.groupCard && p.groupCard.variants > 1 && <p className="zs-muted zs-small">{p.groupCard.variants} options</p>}
                 </div>
               </>
             );
-            return href ? (
-              <a key={p.id} href={href} className="zs-card zs-product">
-                {body}
-              </a>
-            ) : (
+            const action = !p.groupCard && ctx.cardAction ? ctx.cardAction(p) : null;
+            return (
               <div key={p.id} className="zs-card zs-product">
-                {body}
+                {href ? (
+                  <a href={href} className="zs-product-link">
+                    {body}
+                  </a>
+                ) : (
+                  body
+                )}
+                {action && <div className="zs-product-action">{action}</div>}
               </div>
             );
           })}

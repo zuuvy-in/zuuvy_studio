@@ -83,6 +83,47 @@ export const MOTIONS = ["none", "subtle", "lively"] as const;
 export type Theme = z.infer<typeof Theme>;
 
 export const Link = z.object({ label: Text(60), href: Href });
+
+/**
+ * How a store's cart, checkout and customer account look and where they sit.
+ * The AI decides these for the site like any other design choice; everything
+ * has a default, so a store that never set them still sells.
+ */
+export const Commerce = z.object({
+  cart: z
+    .object({
+      style: z.enum(["drawer", "page"]).default("drawer").describe("drawer: slides over the page; page: its own /cart page"),
+      icon: z.enum(["bag", "cart", "basket"]).default("bag"),
+      placement: z
+        .enum(["nav", "floating"])
+        .default("nav")
+        .describe("nav: in the header; floating: a round button fixed to the bottom corner — good for long, image-led mobile pages"),
+      label: Text(20).optional().describe('Word beside the icon, e.g. "Bag"; omit for the icon alone'),
+    })
+    .default({ style: "drawer", icon: "bag", placement: "nav" }),
+  buy: z
+    .enum(["add_to_cart", "buy_now", "both"])
+    .default("both")
+    .describe("Buttons on a product: add to cart and keep shopping, go straight to checkout, or both"),
+  checkout: z
+    .object({
+      layout: z.enum(["single", "steps"]).default("single").describe("single: one page; steps: contact → address → review"),
+      summary: z.enum(["side", "top"]).default("side").describe("Where the order summary sits on wide screens"),
+      askNote: z.boolean().default(true).describe("Offer a note field (delivery instructions)"),
+      heading: Text(80).optional(),
+      reassurance: Text(200).optional().describe("One line under the Place order button: delivery promise, returns, support"),
+    })
+    .default({ layout: "single", summary: "side", askNote: true }),
+  account: z
+    .object({
+      show: z.boolean().default(true).describe("Let customers sign in to see their orders"),
+      placement: z.enum(["nav", "footer"]).default("nav"),
+      label: Text(20).default("Account"),
+    })
+    .default({ show: true, placement: "nav", label: "Account" }),
+});
+export type Commerce = z.infer<typeof Commerce>;
+export const DEFAULT_COMMERCE: Commerce = Commerce.parse({});
 export type Link = z.infer<typeof Link>;
 
 // ---------------------------------------------------------------------------
@@ -255,6 +296,8 @@ export const SiteTree = z
       links: z.array(Link).max(12),
     }),
     pages: z.array(Page).min(1).max(30),
+    /** Stores only: cart, checkout and account presentation. Absent reads as DEFAULT_COMMERCE. */
+    commerce: Commerce.optional(),
   })
   .superRefine((tree, ctx) => {
     const paths = new Set<string>();

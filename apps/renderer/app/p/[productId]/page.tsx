@@ -1,13 +1,15 @@
 import { storefrontProduct } from "@zsite/platform";
-import { Placeholder, SiteShell, linkRewriter } from "@zsite/runtime";
+import { SiteShell, commerceOf } from "@zsite/runtime";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { currentSite } from "@/lib/site";
-import { OrderForm } from "./order-form";
+import { AddToCart } from "@/app/cart/controls";
+import { chromeContext, isStore } from "@/lib/shop";
+import { Gallery } from "../gallery";
 
-type Props = { params: Promise<{ productId: string }> };
+type Props = { params: Promise<{ productId: string }>; searchParams: Promise<{ cart?: string }> };
 
-const inr = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+const inr = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const current = await currentSite();
@@ -16,23 +18,21 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return product ? { title: `${product.name} · ${current.site.tree.meta.title}`, description: product.description.slice(0, 160) } : {};
 }
 
-export default async function ProductPage({ params }: Props) {
+export default async function ProductPage({ params, searchParams }: Props) {
   const current = await currentSite();
   if (!current) notFound();
   const product = await storefrontProduct(current.resolved, (await params).productId);
   if (!product) notFound();
-  const ctx = { mode: "live" as const, href: linkRewriter(""), products: [] };
+  // A variant is chosen on its group's page, where its siblings are.
+  if (product.group_id) redirect(`/g/${product.group_id}?v=${product.id}`);
+  const ctx = await chromeContext(current, { path: `/p/${product.id}`, cart: (await searchParams).cart });
+  const c = commerceOf(current.site.tree);
   return (
     <SiteShell tree={current.site.tree} ctx={ctx}>
       <div className="zs-container zs-page">
         <p><a href="/#shop" className="zs-muted">← Back to the shop</a></p>
         <div className="zs-product-page">
-          {product.images[0] ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={product.images[0]} alt={product.name} className="zs-product-img" />
-          ) : (
-            <Placeholder label={product.name} />
-          )}
+          <Gallery images={product.images} name={product.name} />
           <div>
             {product.category && <p className="zs-product-cat">{product.category}</p>}
             <h1 style={{ fontSize: "clamp(1.8rem, 4vw, 2.6rem)" }}>{product.name}</h1>
@@ -53,12 +53,16 @@ export default async function ProductPage({ params }: Props) {
                   ? `Only ${product.stock} left`
                   : "In stock"}
             </p>
-            <div className="zs-card" style={{ marginTop: 20 }}>
-              <OrderForm
-                productId={product.id}
-                max={product.backorders ? null : product.stock}
-                inStock={product.in_stock || Boolean(product.backorders)}
-              />
+            <div style={{ marginTop: 20 }}>
+              {isStore(current) ? (
+                <AddToCart
+                  productId={product.id}
+                  buy={c.buy}
+                  back={`/p/${product.id}`}
+                  max={product.backorders ? null : product.stock}
+                  disabled={!product.in_stock && !product.backorders}
+                />
+              ) : null}
             </div>
           </div>
         </div>
