@@ -170,13 +170,35 @@ ${dataTools ? `Current data collections:\n${JSON.stringify(opts.data ?? {})}` : 
 Request:
 ${opts.prompt}`;
 
-  const result = await run({ system: SYSTEM, user, tools, model, maxIterations: opts.maxIterations ?? 30, attachments: opts.attachments });
+  let result = await run({ system: SYSTEM, user, tools, model, maxIterations: opts.maxIterations ?? 30, attachments: opts.attachments });
+
+  // A model sometimes describes edits it never made (no tool call succeeded) —
+  // typically after a tool failed. Ask once more, plainly, before giving up.
+  const nothingDone = () => !state.operations.length && !state.dataOperations.length && !state.proposals.length;
+  if (!result.refused && nothingDone() && result.finalText) {
+    const retry = await run({
+      system: SYSTEM,
+      user: `${user}\n\nYour previous attempt replied "${result.finalText.slice(0, 400)}" but made no change: no tool call succeeded, so nothing was saved. Make the requested changes now by calling the tools${state.imageError ? " (picture generation is unavailable — skip pictures, do everything else)" : ""}.`,
+      tools,
+      model,
+      maxIterations: opts.maxIterations ?? 30,
+      attachments: opts.attachments,
+    });
+    const u = result.usage;
+    retry.usage = {
+      input_tokens: u.input_tokens + retry.usage.input_tokens,
+      output_tokens: u.output_tokens + retry.usage.output_tokens,
+      cache_read_input_tokens: u.cache_read_input_tokens + retry.usage.cache_read_input_tokens,
+      requests: u.requests + retry.usage.requests,
+    };
+    result = retry;
+  }
 
   const pictures = state.imageError ? ` Picture generation failed: ${state.imageError}` : "";
   const fail = (message: string, outcome: "refused" | "no_change") =>
     Object.assign(new AgentError(`${message}${pictures}`), { usage: result.usage, outcome, images: state.images });
   if (result.refused) throw fail("The AI declined this request. Try rephrasing it.", "refused");
-  if (!state.operations.length && !state.dataOperations.length && !state.proposals.length) {
+  if (nothingDone()) {
     throw fail(result.finalText ? `The AI made no changes: ${result.finalText.slice(0, 300)}` : "The AI made no changes.", "no_change");
   }
   return {

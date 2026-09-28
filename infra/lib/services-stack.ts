@@ -140,6 +140,11 @@ export class ServicesStack extends Stack {
         `arn:aws:bedrock:*:${this.account}:inference-profile/*`,
       ],
     });
+    // Read-only: lets the image path find a model the account can call when the configured id is refused.
+    const bedrockList = new iam.PolicyStatement({
+      actions: ["bedrock:ListInferenceProfiles", "bedrock:ListFoundationModels", "bedrock:GetInferenceProfile"],
+      resources: ["*"],
+    });
 
     // The media library: writing and reading pictures (reading for exports).
     const assetsRw = new iam.PolicyStatement({
@@ -167,7 +172,10 @@ export class ServicesStack extends Stack {
       opts: { cpu: number; memory: number; count: number; port?: number; command?: string[]; bedrock?: boolean; policies?: iam.PolicyStatement[] },
     ) => {
       const task = new ecs.FargateTaskDefinition(this, `${name}Task`, { cpu: opts.cpu, memoryLimitMiB: opts.memory });
-      if (opts.bedrock) task.addToTaskRolePolicy(bedrock);
+      if (opts.bedrock) {
+        task.addToTaskRolePolicy(bedrock);
+        task.addToTaskRolePolicy(bedrockList);
+      }
       for (const p of opts.policies ?? []) task.addToTaskRolePolicy(p);
       task.addContainer(name, {
         image,

@@ -104,7 +104,7 @@ jobs:
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
           node -e 'const c = JSON.parse(Buffer.from(process.argv[1].split(".")[1], "base64url"));
             console.log(JSON.stringify({ sub: c.sub, aud: c.aud, repository: c.repository, environment: c.environment, ref: c.ref }, null, 2))' "$TOKEN"
-          echo "The role trusts sub = repo:zuuvy-in@309228253/zuuvy_ai_site@1390232775:environment:production and aud = sts.amazonaws.com"
+          echo "The role trusts sub = repo:zuuvy-in@309228253/zuuvy_studio@1390232775:environment:production and aud = sts.amazonaws.com"
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:

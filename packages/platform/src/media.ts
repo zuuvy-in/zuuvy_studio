@@ -4,6 +4,7 @@
  * public object; the AI is told what is in the library so it places the
  * business's own photos before generating anything.
  */
+import { BedrockClient, ListFoundationModelsCommand, ListInferenceProfilesCommand } from "@aws-sdk/client-bedrock";
 import {
   BedrockRuntimeClient,
   ConverseCommand,
@@ -134,10 +135,20 @@ export function imageModel(): ImageModel {
   };
 }
 
-/** Canvas and Titan take one JSON request body; everything else speaks Converse. */
-export function imageApi(model: string): "invoke" | "converse" {
-  return /nova-canvas|titan-image/.test(model) ? "invoke" : "converse";
+/**
+ * How a model is called: Canvas/Titan take Amazon's image body, Stability's
+ * text-to-image models their own, everything else (Nova 2 Omni) Converse.
+ */
+export function imageApi(model: string): "invoke" | "stability" | "converse" {
+  if (/nova-canvas|titan-image/.test(model)) return "invoke";
+  if (/^(us\.|eu\.|apac\.|global\.)?stability\./.test(model)) return "stability";
+  return "converse";
 }
+
+/** Stability models that make a picture from text (the rest only edit one). */
+export const isStabilityTextToImage = (id: string) => /stability\.(stable-image-(core|ultra)|sd3)/.test(id);
+
+const STABILITY_RATIO: Record<ImageAspect, string> = { wide: "16:9", landscape: "3:2", square: "1:1", portrait: "2:3" };
 
 /** Anything with the client's `send`: the real Bedrock client, or a fake in tests. */
 export type ImageSender = { send(command: InvokeModelCommand | ConverseCommand): Promise<unknown> };
@@ -169,10 +180,73 @@ export function imageSize(b: Uint8Array): { width: number; height: number } | nu
   return null;
 }
 
+/**
+ * Which image model this account can actually call from `region`, asked of
+ * Bedrock itself: an inference profile for Nova 2 Omni first, else any active
+ * Amazon model that outputs images. Model ids and profile prefixes differ by
+ * region and change as AWS retires models, so a configured id that turns out
+ * invalid is replaced by what Bedrock lists rather than by a guess.
+ */
+const discovered = new Map<string, string | null>();
+
+export type ModelLister = {
+  send(command: ListInferenceProfilesCommand | ListFoundationModelsCommand): Promise<unknown>;
+};
+
+export async function discoverImageModel(region: string, lister?: ModelLister): Promise<string | null> {
+  if (!lister && discovered.has(region)) return discovered.get(region)!;
+  const client = lister ?? new BedrockClient({ region });
+  let found: string | null = null;
+  try {
+    const profiles = (await client.send(new ListInferenceProfilesCommand({ maxResults: 1000 }))) as {
+      inferenceProfileSummaries?: { inferenceProfileId?: string; status?: string }[];
+    };
+    const ids = (profiles.inferenceProfileSummaries ?? [])
+      .filter((p) => p.status !== "INACTIVE")
+      .map((p) => p.inferenceProfileId ?? "")
+      .filter((id) => /nova-2-omni/.test(id));
+    // A profile for this geography before a global one.
+    found = ids.find((id) => !id.startsWith("global.")) ?? ids[0] ?? null;
+  } catch {
+    /* no permission to list profiles: fall through to the model list */
+  }
+  if (!found) {
+    try {
+      const models = (await client.send(new ListFoundationModelsCommand({ byOutputModality: "IMAGE", byProvider: "Amazon" }))) as {
+        modelSummaries?: { modelId?: string; modelLifecycle?: { status?: string }; inferenceTypesSupported?: string[] }[];
+      };
+      const active = (models.modelSummaries ?? []).filter(
+        (m) => m.modelLifecycle?.status !== "LEGACY" && (m.inferenceTypesSupported ?? ["ON_DEMAND"]).includes("ON_DEMAND"),
+      );
+      found = (active.find((m) => /omni/.test(m.modelId ?? "")) ?? active[0])?.modelId ?? null;
+    } catch {
+      /* nothing listable either */
+    }
+  }
+  if (!found) {
+    // No Amazon image model: a Stability text-to-image model, if the region has one.
+    try {
+      const models = (await client.send(new ListFoundationModelsCommand({ byOutputModality: "IMAGE" }))) as {
+        modelSummaries?: { modelId?: string; modelLifecycle?: { status?: string } }[];
+      };
+      const usable = (models.modelSummaries ?? [])
+        .filter((m) => m.modelLifecycle?.status !== "LEGACY" && isStabilityTextToImage(m.modelId ?? ""))
+        .map((m) => m.modelId!);
+      found = usable.find((id) => /stable-image-core/.test(id)) ?? usable[0] ?? null;
+    } catch {
+      /* nothing */
+    }
+  }
+  if (!lister) discovered.set(region, found);
+  return found;
+}
+
+const replaceable = (e: unknown) => /model identifier is invalid|legacy|not found|doesn't support|does not support/i.test((e as Error).message ?? "");
+
 function explainImageError(e: unknown, model: string, region: string): never {
   const err = e as Error & { name?: string };
   if (/legacy/i.test(err.message)) {
-    throw new UserError(`${model} is a legacy model this account cannot use. Set ZSITE_IMAGE_MODEL to global.amazon.nova-2-omni-v1:0 (the default).`);
+    throw Object.assign(new UserError(`${model} is a legacy model this account cannot use.`), { cause: e });
   }
   if ((err.name === "ValidationException" && /operation not allowed/i.test(err.message)) || err.name === "AccessDeniedException") {
     throw new UserError(`AWS has not allowed this account to use ${model} from ${region} yet — check its quota in the Bedrock console (${region}).`);
@@ -183,17 +257,64 @@ function explainImageError(e: unknown, model: string, region: string): never {
   if (err.name === "ThrottlingException" || err.name === "ServiceQuotaExceededException") {
     throw new UserError("The image model is busy or over its quota. Try again in a minute.");
   }
-  throw new UserError(`Could not create the picture (${err.name ?? "error"}: ${err.message}).`);
+  throw Object.assign(new UserError(`Could not create the picture (${err.name ?? "error"}: ${err.message}).`), { cause: e });
 }
+
+type Rendered = { bytes: Uint8Array; width: number; height: number; contentType: string; ext: string };
 
 export async function renderImage(
   req: { prompt: string; aspect: ImageAspect; style: ImageStyle },
-  opts: { client?: ImageSender; model?: ImageModel } = {},
-): Promise<{ bytes: Uint8Array; width: number; height: number; contentType: string; ext: string }> {
-  const { model, region } = opts.model ?? imageModel();
+  opts: { client?: ImageSender; model?: ImageModel; lister?: ModelLister } = {},
+): Promise<Rendered> {
+  const chosen = opts.model ?? imageModel();
+  try {
+    return await renderWith(req, chosen, opts.client);
+  } catch (e) {
+    if (!replaceable((e as { cause?: unknown }).cause ?? e)) throw e;
+    // The configured id is not callable here: ask Bedrock what is, once.
+    const alternative = await discoverImageModel(chosen.region, opts.lister);
+    if (!alternative || alternative === chosen.model) {
+      throw new UserError(
+        `No image model this account can use from ${chosen.region}: ${chosen.model} was refused ("${String(((e as { cause?: Error }).cause ?? (e as Error)).message).slice(0, 160)}") and Bedrock lists no active alternative. Set ZSITE_IMAGE_MODEL (and ZSITE_IMAGE_REGION) to one the account can call.`,
+      );
+    }
+    return renderWith(req, { model: alternative, region: chosen.region }, opts.client);
+  }
+}
+
+async function renderWith(
+  req: { prompt: string; aspect: ImageAspect; style: ImageStyle },
+  { model, region }: ImageModel,
+  client0?: ImageSender,
+): Promise<Rendered> {
   const size = ASPECT_SIZES[req.aspect];
-  const client = opts.client ?? new BedrockRuntimeClient({ region });
+  const client = client0 ?? new BedrockRuntimeClient({ region });
   const text = `${req.prompt.trim()}. ${STYLE_HINTS[req.style]}`.slice(0, 1000);
+
+  if (imageApi(model) === "stability") {
+    const body: Record<string, unknown> = {
+      prompt: text,
+      negative_prompt: NEGATIVE,
+      aspect_ratio: STABILITY_RATIO[req.aspect],
+      output_format: "png",
+      ...(/sd3/.test(model) ? { mode: "text-to-image" } : {}),
+    };
+    let res: { body?: Uint8Array };
+    try {
+      res = (await client.send(
+        new InvokeModelCommand({ modelId: model, contentType: "application/json", accept: "application/json", body: JSON.stringify(body) }),
+      )) as { body?: Uint8Array };
+    } catch (e) {
+      explainImageError(e, model, region);
+    }
+    const parsed = JSON.parse(new TextDecoder().decode(res.body)) as { images?: string[]; finish_reasons?: (string | null)[] };
+    const reason = parsed.finish_reasons?.find((r) => r);
+    if (reason || !parsed.images?.[0]) {
+      throw new UserError(reason ? "The picture request was blocked by the image model's content filter. Describe it differently." : "The image model returned no picture.");
+    }
+    const bytes = Buffer.from(parsed.images[0], "base64");
+    return { bytes, ...(imageSize(bytes) ?? size), contentType: "image/png", ext: "png" };
+  }
 
   if (imageApi(model) === "converse") {
     let res: ConverseCommandOutput;
@@ -254,7 +375,7 @@ export async function renderImage(
 export async function generateAsset(
   tenantId: string,
   req: { prompt: string; aspect: ImageAspect; style: ImageStyle; siteId?: string | null; userId: string },
-  opts: { client?: ImageSender; model?: ImageModel } = {},
+  opts: { client?: ImageSender; model?: ImageModel; lister?: ModelLister } = {},
 ): Promise<Asset> {
   const store = requireStorage();
   const image = await renderImage(req, opts);
