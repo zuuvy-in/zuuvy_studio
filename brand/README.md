@@ -18,6 +18,7 @@ The full guideline is `guidelines.html` (open it in a browser). The short form:
 | `studio-mark.svg` | Tile (mark on ink): app icon, favicon (`apps/studio/app/icon.svg`) |
 | `studio-mark-mono.svg` | Mark alone, ink in `currentColor` |
 | `studio-lockup.svg` / `studio-lockup-reverse.svg` | Horizontal lockups, light and ink |
+| `studio-mark-512.png` / `studio-lockup.png` | PNG exports for uploads (the site builder refuses SVG). The lockup PNG was rendered without Space Grotesk available; re-export it on a machine with the font for final use |
 | `apps/studio/components/logo.tsx` | `StudioMark`, `StudioLockup` in the product |
 
 The Zuuvy mark itself is owned by `zuuvy_landing/brand` (`tools/make_marks.py`);
