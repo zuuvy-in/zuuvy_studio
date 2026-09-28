@@ -144,7 +144,7 @@ function ProductGrid({ props, ctx, id }: P<"productGrid">) {
               <>
                 <div className="zs-product-media">
                   <Img src={p.images[0]} alt={p.name} className="zs-product-img" />
-                  {!p.inStock && <span className="zs-badge">Out of stock</span>}
+                  {!p.inStock && <span className="zs-badge">{p.backorders ? "Made to order" : "Out of stock"}</span>}
                 </div>
                 <div className="zs-product-body">
                   {p.category && <p className="zs-product-cat">{p.category}</p>}

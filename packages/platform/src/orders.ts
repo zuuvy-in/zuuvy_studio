@@ -11,7 +11,7 @@
  * storage and display.
  */
 import { getAlerts, orderAlertEmail, queueEmail } from "./email";
-import { siteInventory, sourcesFor, tracksStock } from "./inventory";
+import { sellsOutOfStock, siteInventory, sourcesFor, tracksStock } from "./inventory";
 import { ConnectorError, type OrderStatus, type OutboundOrder } from "@zsite/connectors";
 import { getProducts } from "./catalog";
 import { type Tx, UserError, isUuid, withTenant } from "./db";
@@ -118,7 +118,8 @@ export async function placeOrder(tenantId: string, input: PlaceOrderInput): Prom
     const inv = input.siteId ? await siteInventory(tx, input.siteId).catch(() => null) : null;
     const allowed = inv ? sourcesFor(inv) : null;
     if (inv && !allowed) throw new UserError("This site does not take orders.");
-    const counted = !inv || tracksStock(inv);
+    // A store selling out-of-stock products takes the order; accepting takes what stock there is.
+    const counted = (!inv || tracksStock(inv)) && !(inv && sellsOutOfStock(inv));
     const lines: OrderLine[] = [];
     let subtotal = 0;
     for (const l of wanted) {

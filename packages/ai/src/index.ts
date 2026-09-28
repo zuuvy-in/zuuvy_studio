@@ -11,3 +11,5 @@ export { connectMcp, parseMcpServers, toolName } from "./mcp/client";
 export type { McpOptions, McpServerConfig, McpConnection } from "./mcp/client";
 export { createDesignKitServer, paletteFrom, contrast } from "./mcp/design-kit";
 export type { DesignKitOptions } from "./mcp/design-kit";
+export { planSite, planBrief, SitePlan } from "./plan";
+export type { PlanResult, PlanOptions } from "./plan";

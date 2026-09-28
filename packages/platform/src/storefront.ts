@@ -8,7 +8,7 @@ import { type Product, storefrontProducts } from "./catalog";
 import { config } from "./config";
 import { type Tx, isUuid, withGlobal, withTenant } from "./db";
 import { isPlatformHost } from "./domains";
-import { siteInventory, sourcesFor, tracksStock } from "./inventory";
+import { type SiteInventory, sellsOutOfStock, siteInventory, sourcesFor, tracksStock } from "./inventory";
 import { type PublicOrder, publicOrder } from "./orders";
 
 export type ResolvedSite = { tenantId: string; siteId: string };
@@ -88,7 +88,18 @@ export async function productsForTree(tx: Tx, tree: SiteTree, siteId?: string): 
   const sources = sourcesFor(inv);
   if (!sources) return [];
   const rows = await storefrontProducts(tx, { limit: 200, sources });
-  return tracksStock(inv) ? rows : rows.map((p) => ({ ...p, in_stock: true, stock: null }));
+  return rows.map((p) => asSold(p, inv)).filter((p): p is Product => p !== null);
+}
+
+/**
+ * A product as this store presents it: without stock tracking nothing reads
+ * as sold out; a store that hides out-of-stock products leaves them out; one
+ * that sells them marks every product as taking orders beyond its stock.
+ */
+function asSold(p: Product, inv: SiteInventory): Product | null {
+  if (!tracksStock(inv)) return { ...p, in_stock: true, stock: null };
+  if (inv.out_of_stock === "hide" && !p.in_stock) return null;
+  return sellsOutOfStock(inv) ? { ...p, backorders: true } : p;
 }
 
 export async function storefrontData(r: ResolvedSite, tree: SiteTree): Promise<Product[]> {
@@ -108,7 +119,7 @@ export async function storefrontProduct(r: ResolvedSite, productId: string): Pro
     if (!p) return null;
     const inv = await siteInventory(tx, r.siteId);
     if (!sourcesFor(inv)?.includes(p.source)) return null;
-    return tracksStock(inv) ? p : { ...p, in_stock: true, stock: null };
+    return asSold(p, inv);
   });
 }
 

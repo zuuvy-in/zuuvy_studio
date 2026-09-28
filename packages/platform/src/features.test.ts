@@ -36,7 +36,9 @@ import {
   listDomains,
   listPlatformAdmins,
   memoryStorage,
+  parsePlan,
   placeOrder,
+  planVersion,
   removePlatformAdmin,
   restoreVersion,
   saveBrand,
@@ -46,10 +48,12 @@ import {
   setDomainProvider,
   setGitHubFetch,
   setInventory,
+  setOutOfStock,
   setSiteKind,
   setStorage,
   signup,
   storefrontData,
+  storefrontProduct,
   uploadAsset,
   usageSummary,
   withGlobal,
@@ -121,6 +125,41 @@ describe("AI usage", () => {
     const s = await withTenant(a.tenantId, (tx) => usageSummary(tx, a.userId));
     expect(s.mine).toMatchObject({ attempts: 2, versions: 1, input_tokens: 1700, output_tokens: 320 });
     expect(s.business.attempts).toBe(2);
+  });
+});
+
+describe("plan first", () => {
+  it("plans without making a version, meters the plan, and builds the approved plan with the owner's notes", async () => {
+    const site = await portfolio("planned");
+    const base = await withTenant(a.tenantId, (tx) => latestVersion(tx, site.id));
+    const plan = {
+      summary: "A calm portfolio for a Patna product designer.",
+      assumptions: ["Clients are startups"],
+      pages: [{ path: "/", title: "Home", sections: ["hero — who Priya is", "collection projects — the work"] }],
+      style: { mood: "calm", colors: "keep the brand kit", fonts: "Manrope / Inter", motion: "subtle" as const },
+      imagery: "Project screenshots from the media library",
+      questions: [],
+    };
+    const planner = (async () => ({ plan, model: "fake", provider: "bedrock", usage: { input_tokens: 800, output_tokens: 200, cache_read_input_tokens: 0, requests: 2 } })) as never;
+    const r = await planVersion(a.tenantId, { siteId: site.id, baseVersionId: base.id, prompt: "portfolio for me", userId: a.userId }, { planner });
+    expect(r.plan.summary).toMatch(/calm portfolio/);
+    expect((await withTenant(a.tenantId, (tx) => latestVersion(tx, site.id))).id).toBe(base.id);
+    const plans = await withTenant(a.tenantId, (tx) => tx.query<{ outcome: string; version_id: string | null }>("select outcome, version_id from ai_usage where site_id = $1", [site.id]));
+    expect(plans).toEqual([{ outcome: "plan", version_id: null }]);
+
+    let told = "";
+    const created = await generateVersion(
+      a.tenantId,
+      { siteId: site.id, baseVersionId: base.id, prompt: "portfolio for me", userId: a.userId, plan: parsePlan(JSON.stringify(plan)), planNotes: "Add a stats row." },
+      { editor: fakeEditor((o) => ((told = o.prompt), {})) },
+    );
+    expect(told).toContain("portfolio for me");
+    expect(told).toContain("Approved plan");
+    expect(told).toContain("Add a stats row.");
+    // The version remembers what was asked, not the whole brief.
+    expect((await withTenant(a.tenantId, (tx) => latestVersion(tx, site.id))).prompt).toBe("portfolio for me");
+    expect(created.number).toBe(base.number + 1);
+    expect(() => parsePlan('{"summary":"x"}')).toThrow(/could not be read/);
   });
 });
 
@@ -294,6 +333,43 @@ describe("site type and inventory", () => {
     await withTenant(a.tenantId, (tx) => setSiteKind(tx, shop.id, "landing"));
     expect(await storefrontData({ tenantId: a.tenantId, siteId: shop.id }, tree)).toEqual([]);
     await expect(placeOrder(a.tenantId, { siteId: shop.id, customer, lines: [{ productId: product.id, quantity: 1 }] })).rejects.toThrow(/does not take orders/);
+  });
+
+  it("shows, hides or keeps selling out-of-stock products, and returns exactly what accepting took", async () => {
+    const shop = await withTenant(a.tenantId, (tx) =>
+      createSite(tx, { name: "Oos", subdomain: "priya-oos", templateId: "store-classic", templateInput: { businessName: "Priya" }, userId: a.userId }),
+    );
+    await withTenant(a.tenantId, (tx) => setInventory(tx, shop.id, "studio", null));
+    const lamp = await withTenant(a.tenantId, (tx) => createProduct(tx, { name: "Brass lamp", price: 1299, stock: 1 }));
+    const vase = await withTenant(a.tenantId, (tx) => createProduct(tx, { name: "Clay vase", price: 399, stock: 0 }));
+    const tree = (await withTenant(a.tenantId, (tx) => latestVersion(tx, shop.id))).tree!;
+    const site = { tenantId: a.tenantId, siteId: shop.id };
+    const customer = { name: "Ravi", phone: "9876543210", address: "12 Boring Road, Patna" };
+    const stock = async (id: string) => (await withTenant(a.tenantId, (tx) => tx.get<{ stock: number }>("select stock from products where id = $1", [id]))).stock;
+
+    // show (the default): listed, not orderable.
+    expect((await storefrontData(site, tree)).map((p) => p.name)).toEqual(expect.arrayContaining(["Brass lamp", "Clay vase"]));
+    await expect(placeOrder(a.tenantId, { siteId: shop.id, customer, lines: [{ productId: vase.id, quantity: 1 }] })).rejects.toThrow(/out of stock/);
+
+    // hide: gone from the store, still not orderable.
+    await withTenant(a.tenantId, (tx) => setOutOfStock(tx, shop.id, "hide"));
+    const hidden = (await storefrontData(site, tree)).map((p) => p.name);
+    expect(hidden).toContain("Brass lamp");
+    expect(hidden).not.toContain("Clay vase");
+    expect(await storefrontProduct(site, vase.id)).toBeNull();
+
+    // sell: orderable beyond stock; accepting takes what is there and cancelling returns only that.
+    await withTenant(a.tenantId, (tx) => setOutOfStock(tx, shop.id, "sell"));
+    expect((await storefrontProduct(site, vase.id))?.backorders).toBe(true);
+    const order = await placeOrder(a.tenantId, { siteId: shop.id, customer, lines: [{ productId: lamp.id, quantity: 3 }, { productId: vase.id, quantity: 2 }] });
+    await advanceOrder(a.tenantId, order.id, "confirmed");
+    expect(await stock(lamp.id)).toBe(0);
+    expect(await stock(vase.id)).toBe(0);
+    await advanceOrder(a.tenantId, order.id, "cancelled");
+    expect(await stock(lamp.id)).toBe(1);
+    expect(await stock(vase.id)).toBe(0);
+
+    await expect(withTenant(a.tenantId, (tx) => setOutOfStock(tx, shop.id, "later"))).rejects.toThrow(/out-of-stock/);
   });
 });
 

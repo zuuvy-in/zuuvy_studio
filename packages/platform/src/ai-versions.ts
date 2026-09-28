@@ -10,7 +10,18 @@
  *   - usage: every attempt is recorded with its tokens, including the ones
  *     that end in an error, because those tokens were spent too.
  */
-import { AgentError, type Attachment, type EditResult, type ToolCapabilities, editSite, parseMcpServers } from "@zsite/ai";
+import {
+  AgentError,
+  type Attachment,
+  type EditResult,
+  type PlanResult,
+  SitePlan,
+  type ToolCapabilities,
+  editSite,
+  parseMcpServers,
+  planBrief,
+  planSite,
+} from "@zsite/ai";
 import { type DataOp, applyBrand, applyDataOps, brandBrief, lockedThemeFields, paletteForImages } from "@zsite/core";
 import { productCategories } from "./catalog";
 import { config } from "./config";
@@ -27,6 +38,9 @@ export type GenerateInput = {
   prompt: string;
   userId: string;
   attachments?: Attachment[];
+  /** A plan the owner approved (planVersion), and their notes on it. */
+  plan?: SitePlan;
+  planNotes?: string;
 };
 
 /** Swappable for tests: anything with editSite's signature. */
@@ -38,13 +52,8 @@ export type GenerateOptions = {
   capabilities?: ToolCapabilities;
 };
 
-export async function generateVersion(
-  tenantId: string,
-  input: GenerateInput,
-  optsOrEditor: GenerateOptions | Editor = {},
-): Promise<{ id: string; number: number; result: EditResult }> {
-  const opts: GenerateOptions = typeof optsOrEditor === "function" ? { editor: optsOrEditor } : optsOrEditor;
-  const editor = opts.editor ?? editSite;
+/** The site, the base version and everything the model is told about the business. */
+async function prepare(tenantId: string, input: Omit<GenerateInput, "prompt"> & { prompt: string }, extra?: ToolCapabilities) {
   const prompt = input.prompt.trim();
   if (prompt.length < 3) throw new UserError("Describe the change you want.");
   if (prompt.length > 4000) throw new UserError("Keep the request under 4,000 characters.");
@@ -83,31 +92,44 @@ export async function generateVersion(
       : {}),
     fetchReference,
     maxReferences: 3,
-    ...opts.capabilities,
+    ...extra,
   };
 
   const provider = config.aiProvider();
+  const shared = {
+    tree: base.tree!,
+    context,
+    provider,
+    model: config.aiModel() || undefined,
+    attachments: input.attachments,
+    brand: brandBrief(brand),
+    capabilities,
+    data: base.data,
+    fallbackModel: config.aiFallbackModel(),
+    mcp: {
+      designKit: { unsplashKey: config.unsplashKey() || undefined, pexelsKey: config.pexelsKey() || undefined },
+      servers: parseMcpServers(config.mcpServers()),
+    },
+  };
   const record = (r: Parameters<typeof recordUsage>[1]) =>
     withTenant(tenantId, (tx) => recordUsage(tx, r)).catch((e) => console.error("ai usage not recorded:", e));
+  return { prompt, base, brand, provider, shared, record };
+}
+
+export async function generateVersion(
+  tenantId: string,
+  input: GenerateInput,
+  optsOrEditor: GenerateOptions | Editor = {},
+): Promise<{ id: string; number: number; result: EditResult }> {
+  const opts: GenerateOptions = typeof optsOrEditor === "function" ? { editor: optsOrEditor } : optsOrEditor;
+  const editor = opts.editor ?? editSite;
+  const { prompt, base, brand, provider, shared, record } = await prepare(tenantId, input, opts.capabilities);
+  // An approved plan travels with the request; the version remembers the request itself.
+  const brief = input.plan ? `${prompt}\n\n${planBrief(input.plan, input.planNotes)}` : prompt;
 
   let result: EditResult;
   try {
-    result = await editor({
-      tree: base.tree!,
-      prompt,
-      context,
-      provider,
-      model: config.aiModel() || undefined,
-      attachments: input.attachments,
-      brand: brandBrief(brand),
-      capabilities,
-      data: base.data,
-      fallbackModel: config.aiFallbackModel(),
-      mcp: {
-        designKit: { unsplashKey: config.unsplashKey() || undefined, pexelsKey: config.pexelsKey() || undefined },
-        servers: parseMcpServers(config.mcpServers()),
-      },
-    });
+    result = await editor({ ...shared, prompt: brief });
   } catch (e) {
     const err = e as AgentError;
     await record({
@@ -209,3 +231,58 @@ export async function applyProposals(
     });
   });
 }
+
+/** Swappable for tests: anything with planSite's signature. */
+export type Planner = typeof planSite;
+
+/**
+ * "Plan first": the AI says what it would build from the request — nothing
+ * is edited and no version is made. The owner approves the plan (with notes)
+ * and generateVersion builds it. Metered like an edit.
+ */
+export async function planVersion(tenantId: string, input: GenerateInput, opts: { planner?: Planner; capabilities?: ToolCapabilities } = {}): Promise<PlanResult> {
+  const planner = opts.planner ?? planSite;
+  const { prompt, shared, record } = await prepare(tenantId, input, opts.capabilities);
+  const base = { userId: input.userId, siteId: input.siteId, images: 0 };
+  try {
+    const r = await planner({ ...shared, prompt });
+    await record({
+      ...base,
+      provider: r.provider,
+      model: r.model,
+      inputTokens: r.usage.input_tokens,
+      outputTokens: r.usage.output_tokens,
+      cacheReadTokens: r.usage.cache_read_input_tokens,
+      requests: r.usage.requests,
+      outcome: "plan",
+    });
+    return r;
+  } catch (e) {
+    const err = e as AgentError;
+    await record({
+      ...base,
+      provider: shared.provider,
+      model: shared.model || "(default)",
+      inputTokens: err.usage?.input_tokens ?? 0,
+      outputTokens: err.usage?.output_tokens ?? 0,
+      cacheReadTokens: err.usage?.cache_read_input_tokens ?? 0,
+      requests: err.usage?.requests ?? 0,
+      outcome: err instanceof AgentError && err.outcome ? err.outcome : "error",
+      error: err.message,
+    });
+    if (e instanceof AgentError) throw new UserError(e.message);
+    throw e;
+  }
+}
+
+/** A plan that came back from the browser: parsed again, never trusted. */
+export function parsePlan(raw: string): SitePlan {
+  try {
+    return SitePlan.parse(JSON.parse(raw));
+  } catch {
+    throw new UserError("That plan could not be read. Make a new one.");
+  }
+}
+
+/** The plan's shape, for the studio (which does not depend on @zsite/ai). */
+export type Plan = SitePlan;

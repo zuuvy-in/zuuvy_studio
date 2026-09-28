@@ -16,12 +16,17 @@ import {
   importRevision,
   importSite,
   isPlatformAdmin,
+  NotFound,
+  type Plan,
+  parsePlan,
+  planVersion,
   publishVersion,
   removeDomain,
   renameSite,
   restoreVersion,
   saveBrand,
   setInventory,
+  setOutOfStock,
   setSiteKind,
   toAttachments,
   uploadAsset,
@@ -141,28 +146,55 @@ export async function restoreAction(_: ActionState, form: FormData): Promise<Act
   });
 }
 
+/** The request as the composer sent it: the words, any reference links, any files. */
+async function requestFrom(form: FormData) {
+  const links = text(form, "links")
+    .split(/\s+/)
+    .filter((l) => /^https?:\/\//i.test(l))
+    .slice(0, 3);
+  const prompt = text(form, "prompt") + (links.length ? `\n\nReference websites (look at them first): ${links.join(" ")}` : "");
+  const attachments = toAttachments(await filesOf(form, "files"));
+  return { prompt, attachments };
+}
+
 export async function generateAction(_: ActionState, form: FormData): Promise<ActionState> {
   const session = await requireSession();
   const siteId = text(form, "siteId");
   return attempt(async () => {
     const baseNumber = Number(text(form, "base"));
     const base = await withTenant(session.tenant.id, (tx) => getVersionByNumber(tx, siteId, baseNumber));
-    const links = text(form, "links")
-      .split(/\s+/)
-      .filter((l) => /^https?:\/\//i.test(l))
-      .slice(0, 3);
-    const prompt = text(form, "prompt") + (links.length ? `\n\nReference websites (look at them first): ${links.join(" ")}` : "");
-    const attachments = toAttachments(await filesOf(form, "files"));
+    const { prompt, attachments } = await requestFrom(form);
+    const rawPlan = text(form, "plan");
     const created = await generateVersion(session.tenant.id, {
       siteId,
       baseVersionId: base.id,
       prompt,
       userId: session.user.id,
       attachments,
+      ...(rawPlan ? { plan: parsePlan(rawPlan), planNotes: text(form, "planNotes").slice(0, 2000) } : {}),
     });
     revalidatePath(`/sites/${siteId}`, "layout");
     redirect(`/sites/${siteId}/versions/${created.number}`);
   });
+}
+
+export type PlanState = { error?: string; plan?: Plan } | null;
+
+/** "Plan first": the AI's plan for the request, shown for approval. Builds nothing. */
+export async function planAction(form: FormData): Promise<PlanState> {
+  const session = await requireSession();
+  const siteId = text(form, "siteId");
+  try {
+    const baseNumber = Number(text(form, "base"));
+    const base = await withTenant(session.tenant.id, (tx) => getVersionByNumber(tx, siteId, baseNumber));
+    const { prompt, attachments } = await requestFrom(form);
+    const r = await planVersion(session.tenant.id, { siteId, baseVersionId: base.id, prompt, userId: session.user.id, attachments });
+    return { plan: r.plan };
+  } catch (e) {
+    if (e instanceof UserError) return { error: e.message };
+    if (e instanceof NotFound) return { error: "That no longer exists." };
+    throw e;
+  }
 }
 
 export async function renameAction(_: ActionState, form: FormData): Promise<ActionState> {
@@ -186,9 +218,13 @@ export async function inventoryAction(_: ActionState, form: FormData): Promise<A
   const siteId = text(form, "siteId");
   return attempt(async () => {
     const [mode, source] = text(form, "inventory").split(":");
-    await withTenant(session.tenant.id, (tx) => setInventory(tx, siteId, mode ?? "", source ?? null));
+    await withTenant(session.tenant.id, async (tx) => {
+      await setInventory(tx, siteId, mode ?? "", source ?? null);
+      const outOfStock = text(form, "outOfStock");
+      if (outOfStock) await setOutOfStock(tx, siteId, outOfStock);
+    });
     revalidatePath("/", "layout");
-    return { ok: "Saved. The store now shows products from this source." };
+    return { ok: "Saved." };
   });
 }
 

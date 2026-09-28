@@ -1,12 +1,14 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import type { Plan } from "@zsite/platform";
+import { useActionState, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
 import type { ActionState } from "@/lib/actions";
 import { Message, Spinner, SubmitButton } from "./forms";
 import { Icon, buttonClass, cx } from "./ui";
 
 const SUGGESTIONS = [
+  "A modern site for my bakery in Patna",
   "Make it feel more premium with a dark theme",
   "Add pictures to every section and make it lively with animation",
   "Add an FAQ about delivery, returns and payment on delivery",
@@ -14,11 +16,82 @@ const SUGGESTIONS = [
   "Add a testimonials section and an About page",
 ];
 
-function ComposerBody({ disabled, accept }: { disabled: boolean; accept: string }) {
+type PlanFn = (form: FormData) => Promise<{ error?: string; plan?: Plan } | null>;
+
+function PlanCard({ plan }: { plan: Plan }) {
+  return (
+    <div className="mt-3 space-y-3 rounded-lg bg-white p-4 text-sm ring-1 ring-ai-500/20">
+      <p className="text-slate-800">{plan.summary}</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {plan.pages.map((p) => (
+          <div key={p.path}>
+            <p className="font-semibold text-slate-900">
+              {p.title} <span className="font-mono text-xs font-normal text-slate-400">{p.path}</span>
+            </p>
+            <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-slate-600">
+              {p.sections.map((sec, i) => (
+                <li key={i}>{sec}</li>
+              ))}
+            </ol>
+          </div>
+        ))}
+      </div>
+      <dl className="grid gap-x-4 gap-y-1 text-slate-600 sm:grid-cols-[auto_1fr]">
+        <dt className="font-medium text-slate-900">Look</dt>
+        <dd>{plan.style.mood} · {plan.style.fonts} · motion {plan.style.motion}</dd>
+        <dt className="font-medium text-slate-900">Colours</dt>
+        <dd>{plan.style.colors}</dd>
+        <dt className="font-medium text-slate-900">Pictures</dt>
+        <dd>{plan.imagery}</dd>
+      </dl>
+      {plan.assumptions.length > 0 && (
+        <div>
+          <p className="font-medium text-slate-900">Assumed</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-slate-600">
+            {plan.assumptions.map((a, i) => (
+              <li key={i}>{a}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {plan.questions.length > 0 && (
+        <div className="rounded-lg bg-amber-50 p-3 ring-1 ring-amber-200">
+          <p className="font-medium text-amber-900">Questions (optional — sensible defaults otherwise)</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-amber-900">
+            {plan.questions.map((q, i) => (
+              <li key={i}>{q}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ComposerBody({ disabled, accept, plan: planFn }: { disabled: boolean; accept: string; plan?: PlanFn }) {
   const { pending } = useFormStatus();
   const [prompt, setPrompt] = useState("");
   const [files, setFiles] = useState<string[]>([]);
   const [showLinks, setShowLinks] = useState(false);
+  const [planFirst, setPlanFirst] = useState(Boolean(planFn));
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const [planError, setPlanError] = useState("");
+  const [planning, startPlanning] = useTransition();
+  const busy = pending || planning;
+
+  const makePlan = (form: HTMLFormElement | null) => {
+    if (!form || !planFn) return;
+    if (!form.reportValidity()) return;
+    // Called directly, not as the form's action, so the chosen files stay in the form for the build.
+    const fd = new FormData(form);
+    setPlanError("");
+    startPlanning(async () => {
+      const r = await planFn(fd);
+      if (r?.error) setPlanError(r.error);
+      else if (r?.plan) setPlan(r.plan);
+    });
+  };
+
   return (
     <>
       <textarea
@@ -28,15 +101,19 @@ function ComposerBody({ disabled, accept }: { disabled: boolean; accept: string 
         rows={3}
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
-        disabled={disabled || pending}
-        placeholder="Describe a change — “Show chargers first and add a section about same-day delivery in Patna”"
+        disabled={disabled || busy}
+        readOnly={Boolean(plan)}
+        placeholder="One line is enough — “A modern site for my bakery in Patna” — or describe a change in detail"
         className="field resize-y text-[15px] leading-relaxed"
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit();
+          if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
+          e.preventDefault();
+          if (planFirst && planFn && !plan) makePlan(e.currentTarget.form);
+          else e.currentTarget.form?.requestSubmit();
         }}
       />
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-        <label className={cx("inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-slate-300 bg-white px-2.5 py-1.5 font-medium text-slate-600 hover:border-brand-400 hover:text-brand-700", (disabled || pending) && "pointer-events-none opacity-50")}>
+        <label className={cx("inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-slate-300 bg-white px-2.5 py-1.5 font-medium text-slate-600 hover:border-brand-400 hover:text-brand-700", (disabled || busy) && "pointer-events-none opacity-50")}>
           <Icon name="plus" className="h-3.5 w-3.5" /> Attach files
           <input
             type="file"
@@ -50,6 +127,12 @@ function ComposerBody({ disabled, accept }: { disabled: boolean; accept: string 
         <button type="button" onClick={() => setShowLinks((v) => !v)} className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 bg-white px-2.5 py-1.5 font-medium text-slate-600 hover:border-brand-400 hover:text-brand-700">
           <Icon name="external" className="h-3.5 w-3.5" /> Reference websites
         </button>
+        {planFn && (
+          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 font-medium text-slate-700 ring-1 ring-slate-200">
+            <input type="checkbox" checked={planFirst} disabled={busy || Boolean(plan)} onChange={(e) => setPlanFirst(e.target.checked)} />
+            Plan first
+          </label>
+        )}
         {files.length > 0 && <span className="text-slate-500">{files.join(", ")}</span>}
         <span className="text-slate-400">PDF, Word, Excel, CSV, text or screenshots — up to 5 files, 4.5 MB each</span>
       </div>
@@ -57,27 +140,59 @@ function ComposerBody({ disabled, accept }: { disabled: boolean; accept: string 
         <textarea
           name="links"
           rows={2}
-          disabled={disabled || pending}
+          disabled={disabled || busy}
+          readOnly={Boolean(plan)}
           placeholder={"One address per line — the AI looks at them for layout, tone and colours\nhttps://example.com"}
           className="field mt-2 resize-y text-sm"
         />
       )}
+      {plan && (
+        <>
+          <PlanCard plan={plan} />
+          <input type="hidden" name="plan" value={JSON.stringify(plan)} />
+          <textarea
+            name="planNotes"
+            rows={2}
+            disabled={busy}
+            placeholder="Answers or changes to the plan (optional) — “No stats section; our number is 98765 43210”"
+            className="field mt-3 resize-y text-sm"
+          />
+        </>
+      )}
+      {planError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800 ring-1 ring-rose-200">{planError}</p>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {!pending &&
+        {!busy &&
+          !plan &&
           SUGGESTIONS.map((s) => (
             <button key={s} type="button" disabled={disabled} onClick={() => setPrompt(s)} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 hover:border-brand-300 hover:text-brand-700 disabled:opacity-50">
               {s}
             </button>
           ))}
-        {pending && (
+        {planning && (
           <p className="flex items-center gap-2 text-sm text-ai-600">
-            <Spinner /> The AI is editing your site. This usually takes under a minute…
+            <Spinner /> The AI is planning — pages, sections and look. Usually under half a minute…
           </p>
         )}
-        <div className="ml-auto">
-          <SubmitButton pending="Working…">
-            <Icon name="sparkles" /> Create version
-          </SubmitButton>
+        {pending && (
+          <p className="flex items-center gap-2 text-sm text-ai-600">
+            <Spinner /> The AI is building your site. This usually takes a minute or two…
+          </p>
+        )}
+        <div className="ml-auto flex gap-2">
+          {plan && !pending && (
+            <button type="button" onClick={() => setPlan(null)} className={buttonClass("secondary")}>
+              Start over
+            </button>
+          )}
+          {planFirst && planFn && !plan ? (
+            <button type="button" disabled={disabled || busy} onClick={(e) => makePlan(e.currentTarget.form)} className={buttonClass("primary")}>
+              {planning ? <Spinner /> : <Icon name="sparkles" />} {planning ? "Planning…" : "Plan it"}
+            </button>
+          ) : (
+            <SubmitButton pending="Building…">
+              <Icon name="sparkles" /> {plan ? "Build this" : "Create version"}
+            </SubmitButton>
+          )}
         </div>
       </div>
     </>
@@ -93,8 +208,11 @@ export function Composer({
   setupHint,
   title = "Describe a change",
   accept = "",
+  plan,
 }: {
   action: (state: ActionState, form: FormData) => Promise<ActionState>;
+  /** "Plan first": drafts a plan to approve before building. Without it the composer builds straight away. */
+  plan?: PlanFn;
   siteId: string;
   baseNumber: number;
   aiReady: boolean;
@@ -115,7 +233,7 @@ export function Composer({
         </p>
         <p className="text-xs text-slate-500">Based on v{baseNumber} · nothing goes live until you publish</p>
       </div>
-      <ComposerBody disabled={!aiReady} accept={accept} />
+      <ComposerBody disabled={!aiReady} accept={accept} plan={plan} />
       {!aiReady && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">
           {setupHint ?? "AI editing is not configured."}
