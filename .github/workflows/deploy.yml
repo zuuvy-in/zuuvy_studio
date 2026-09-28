@@ -122,7 +122,8 @@ jobs:
 
       - name: Email DNS records (add these at the registrar once)
         working-directory: infra
-        run: jq -r '.ZsiteBase | to_entries[] | select(.key | startswith("Email")) | "\(.key): \(.value)"' base-outputs.json || true
+        run: |
+          jq -r '.ZsiteBase | to_entries[] | select(.key | startswith("Email")) | "\(.key) = \(.value)"' base-outputs.json || true
 
       - name: Migrate the database
         working-directory: infra
