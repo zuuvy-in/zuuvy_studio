@@ -9,6 +9,7 @@ import {
   getGitLink,
   getSite,
   isApex,
+  latestVersion,
   listDomains,
   listIntegrations,
   siteInventory,
@@ -59,13 +60,14 @@ function Record({ type, name, value }: { type: string; name: string; value: stri
 export default async function SettingsPage({ params }: { params: Promise<{ siteId: string }> }) {
   const { siteId } = await params;
   const session = await requireSession();
-  const { site, domains, git, deletion, integrations, inventory } = await withTenant(session.tenant.id, async (tx) => ({
+  const { site, domains, git, deletion, integrations, inventory, theme } = await withTenant(session.tenant.id, async (tx) => ({
     site: await getSite(tx, siteId),
     domains: await listDomains(tx, siteId),
     git: await getGitLink(tx, siteId),
     deletion: await deletionCheck(tx, siteId),
     integrations: (await listIntegrations(tx)).filter((i) => i.status !== "disconnected"),
     inventory: await siteInventory(tx, siteId),
+    theme: (await latestVersion(tx, siteId)).tree?.theme,
   }));
   const brand = site.brand;
   const target = domainTarget();
@@ -188,10 +190,10 @@ export default async function SettingsPage({ params }: { params: Promise<{ siteI
                   return (
                     <label key={k} className="flex items-center gap-2 rounded-lg border border-slate-200 p-2 text-sm">
                       <input type="checkbox" name={`set_${k}`} value="1" defaultChecked={Boolean(fixed)} title="Fix this colour" />
-                      <input type="color" name={`color_${k}`} defaultValue={fixed ?? ai ?? "#4f46e5"} className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0" aria-label={COLOR_LABELS[k]} />
+                      <input type="color" name={`color_${k}`} defaultValue={fixed ?? ai ?? theme?.colors[k] ?? "#22314f"} className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0" aria-label={COLOR_LABELS[k]} />
                       <span className="min-w-0 flex-1">
                         <span className="block font-medium text-slate-800">{COLOR_LABELS[k]}</span>
-                        <span className="block text-xs text-slate-500">{fixed ? "Fixed by you" : ai ? `AI chose ${ai}` : "AI chooses"}</span>
+                        <span className="block text-xs text-slate-500">{fixed ? "Fixed by you" : ai ? `AI chose ${ai}` : `AI chooses · now ${theme?.colors[k] ?? "—"}`}</span>
                       </span>
                     </label>
                   );

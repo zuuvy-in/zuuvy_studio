@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { StudioMark } from "@/components/logo";
 import { SidebarNav } from "@/components/nav";
 import { Icon } from "@/components/ui";
 import { hasStore, isPlatformAdmin, withTenant } from "@zsite/platform";
@@ -12,10 +13,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <div className="md:flex">
       <aside className="border-b border-slate-200 bg-slate-50 md:sticky md:top-0 md:flex md:h-screen md:w-60 md:shrink-0 md:flex-col md:border-r md:border-b-0">
         <div className="flex items-center gap-2.5 px-4 py-4">
-          <Link href="/" className="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-sm font-bold text-white">Z</Link>
+          <Link href="/" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-600 text-white" aria-label="Zuuvy Studio home">
+            <StudioMark size={26} />
+          </Link>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-slate-900">{session.tenant.name}</p>
-            <p className="text-xs text-slate-500">Zuuvy Sites</p>
+            <p className="font-display text-xs text-slate-500"><span className="font-bold">Zuuvy</span> Studio</p>
           </div>
         </div>
         <div className="px-3 pb-3 md:flex-1">

@@ -70,7 +70,7 @@ function ComposerBody({ disabled, accept }: { disabled: boolean; accept: string 
             </button>
           ))}
         {pending && (
-          <p className="flex items-center gap-2 text-sm text-brand-700">
+          <p className="flex items-center gap-2 text-sm text-ai-600">
             <Spinner /> The AI is editing your site. This usually takes under a minute…
           </p>
         )}
@@ -106,12 +106,12 @@ export function Composer({
 }) {
   const [state, formAction] = useActionState(action, null);
   return (
-    <form action={formAction} className="rounded-xl border border-brand-100 bg-gradient-to-b from-brand-50/70 to-white p-4 shadow-xs">
+    <form action={formAction} className="rounded-xl border border-ai-500/20 bg-gradient-to-b from-ai-50 to-white p-4 shadow-xs">
       <input type="hidden" name="siteId" value={siteId} />
       <input type="hidden" name="base" value={baseNumber} />
       <div className="mb-2 flex items-center justify-between">
         <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-          <Icon name="sparkles" className="text-brand-600" /> {title}
+          <Icon name="sparkles" className="text-ai-600" /> {title}
         </p>
         <p className="text-xs text-slate-500">Based on v{baseNumber} · nothing goes live until you publish</p>
       </div>
