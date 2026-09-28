@@ -20,6 +20,7 @@ import {
   newId,
   Commerce,
   DEFAULT_COMMERCE,
+  SectionStyle,
 } from "./tree";
 
 export class OpError extends Error {
@@ -86,6 +87,12 @@ export const Operation = z.discriminatedUnion("op", [
     props: z.record(z.string(), z.unknown()),
   }),
   z.object({ op: z.literal("removeSection"), section: z.string() }),
+  z.object({
+    op: z.literal("styleSection"),
+    section: z.string(),
+    /** Fields to set; null clears one; an empty object clears them all. */
+    style: z.record(z.string(), z.unknown()),
+  }),
   z.object({
     op: z.literal("moveSection"),
     section: z.string(),
@@ -200,6 +207,17 @@ function applyOne(tree: SiteTree, raw: Operation): void {
         if (v === null) delete (merged as Record<string, unknown>)[k];
       }
       (section as { props: unknown }).props = blockProps(section.type, merged);
+      return;
+    }
+    case "styleSection": {
+      const { section } = findSection(tree, op.section);
+      const next: Record<string, unknown> = Object.keys(op.style).length ? { ...(section.style ?? {}), ...op.style } : {};
+      for (const [k, v] of Object.entries(op.style)) if (v === null) delete next[k];
+      const parsed = SectionStyle.safeParse(next);
+      if (!parsed.success) throw new OpError(`section style: ${describeIssues(parsed.error)}`);
+      if (parsed.data.background === "image" && !parsed.data.image) throw new OpError("section style: background image needs an image URL");
+      if (Object.keys(parsed.data).length) section.style = parsed.data;
+      else delete section.style;
       return;
     }
     case "removeSection": {

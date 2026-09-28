@@ -18,6 +18,7 @@ import {
   usesDataTools,
 } from "./agent";
 import { AgentError } from "./errors";
+import { skillsForPrompt } from "./skills";
 import { type McpConnection, connectMcp } from "./mcp/client";
 import { anthropicProvider } from "./providers/anthropic";
 import { bedrockProvider } from "./providers/bedrock";
@@ -59,13 +60,17 @@ export type PlanResult = { plan: SitePlan; model: string; provider: ProviderName
 
 const PLAN_SYSTEM = `You plan website changes for Zuuvy Sites, a website platform for small businesses in India, before anything is built. The owner reads your plan, corrects it or answers your questions, and approves it; then a builder carries it out with the same blocks and tools.
 
-Requests are often one short line. Plan like a senior web designer given a one-line brief: decide the audience, the pages, the sections in order, the look and the copy direction yourself, and write down what you assumed. Make it a complete, ambitious plan for a real business — not a skeleton — but only what this site's blocks can do: hero, features, productGrid, richText, imageText, gallery, testimonials, stats, faq, cta, contact, and collection (portfolio data). For a store, product grids fill from the catalogue; never plan to type products or prices.
+Requests are often one short line. Plan like a senior web designer given a one-line brief: decide the audience, the pages, the sections in order, the look and the copy direction yourself, and write down what you assumed. Make it a complete, ambitious plan for a real business — not a skeleton — but only what this site's blocks can do: hero, features, productGrid, richText, imageText, gallery, testimonials, stats, faq, cta, contact, logos, marquee, steps, and collection (portfolio data) — each with layouts and a section style (background, pattern, divider, entrance). For a store, product grids fill from the catalogue; never plan to type products or prices.
 
 Use the design helpers (palette, font_pairings, style_recipe, search_photos) and fetch_reference when the request names a website, so the plan's colours, fonts and imagery are real choices. Respect the brand kit: what it fixes is not yours to change.
 
 Do not invent facts that matter (phone numbers, addresses, prices, awards, years in business); note them as assumptions or questions instead. Ask a question only when the answer would change the build a lot and cannot be assumed — usually ask none.
 
-Call submit_plan exactly once with the finished plan, then reply "Plan ready."`;
+Plan with the skills below: name each section's layout and style in its line ("features, bento with icons — dark gradient section", "marquee band: Free delivery · Eggless · Custom designs", "hero fullbleed with rotating words"), and say which two or three moving pieces the page gets.
+
+Call submit_plan exactly once with the finished plan, then reply "Plan ready."
+
+${skillsForPrompt()}`;
 
 export type PlanOptions = Omit<EditOptions, "fallbackModel"> & { fallbackModel?: string };
 

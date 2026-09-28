@@ -155,3 +155,21 @@ describe("commerce tool", () => {
     expect(state.tree.commerce).toMatchObject({ cart: { style: "drawer", icon: "basket" }, account: { placement: "footer", show: true } });
   });
 });
+
+describe("design tools", () => {
+  it("styles sections, and turns an unknown icon name into a correctable error with suggestions", async () => {
+    const { tools, state } = createSiteTools(tree());
+    const hero = state.tree.pages[0]!.sections[0]!.id;
+    await tools.find((t) => t.name === "style_section")!.run({ section: hero, style: { spacing: "roomy" } });
+    expect(state.tree.pages[0]!.sections[0]!.style).toEqual({ spacing: "roomy" });
+    await expect(
+      Promise.resolve().then(() =>
+        tools.find((t) => t.name === "add_section")!.run({ page: "/", type: "features", props: { heading: "Why us", items: [{ title: "Fast", body: "x", icon: "delivery-van" }] } }),
+      ),
+    ).rejects.toThrow(/No icon called "delivery-van"/);
+    const out = JSON.parse(
+      await tools.find((t) => t.name === "add_section")!.run({ page: "/", type: "marquee", props: { items: ["A", "B"], icon: "truck" }, style: { background: "dark" } }),
+    );
+    expect(state.tree.pages[0]!.sections.find((s) => s.id === out.section)?.style).toEqual({ background: "dark" });
+  });
+});

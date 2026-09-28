@@ -82,3 +82,9 @@ npm run db:seed:shop   # local: variants, discounts and a cart drawer on the dem
   `Object.values(product.options)` — jsonb reorders keys.
 - **Customer accounts are per business** and orders attach only when placed
   signed in — never by phone number.
+- **Icons are names, never markup.** A tree names a Lucide icon (or an https
+  image); the SVG comes from the bundled package. New icon fields go through
+  `unknownIcons` in the tools so a wrong name is corrected, not drawn blank.
+- **Section looks live in `section.style`, not props** — the runtime's
+  `.zs-block` wrapper applies them. Scroll animations must finish by
+  `entry 100%`, or content near the page's top or bottom is left half-drawn.

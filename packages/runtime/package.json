@@ -9,6 +9,7 @@
     "./styles.css": "./src/styles.css"
   },
   "dependencies": {
+    "@iconify-json/lucide": "^1.2.137",
     "@zsite/core": "*"
   },
   "peerDependencies": {

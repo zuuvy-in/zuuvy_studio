@@ -13,6 +13,7 @@
 import { BLOCKS, COLLECTIONS, type DataOp, type Operation, type SiteData, type SiteTree } from "@zsite/core";
 import { z } from "zod";
 import { AgentError } from "./errors";
+import { skillsForPrompt } from "./skills";
 import { anthropicProvider } from "./providers/anthropic";
 import { type BedrockOptions, bedrockProvider } from "./providers/bedrock";
 import { type McpConnection, type McpOptions, connectMcp } from "./mcp/client";
@@ -98,7 +99,12 @@ How to work:
 - Do what was asked, completely, and nothing unrelated. Keep what the user did not ask to change.
 - Write real, specific copy for this business in plain English (Indian English spelling), short sentences. Do not invent facts that matter: phone numbers, addresses, prices, years in business, awards, customer names. When a block needs such a fact and you do not have it, write copy that does not need it, or leave the optional field out.
 - Keep the design coherent: a palette with enough contrast (text on background and on surface must stay readable), at most two fonts, consistent tone.
+- Follow the skills below (web design, content, animation). A site should look designed: varied section layouts, alternating section styles (style_section), icons on features/steps/bullets (exact Lucide names — find them with design__search_icons), and two or three moving pieces. When you build or restyle, use the richer block options, not just the defaults.
 - Make all the calls you need, then reply with one sentence (under 25 words, no <thinking> tags) saying what you changed, for the version history. Do not ask questions; if the request is ambiguous, choose the most reasonable reading.
+
+## Skills
+
+${skillsForPrompt()}
 
 ## Blocks
 

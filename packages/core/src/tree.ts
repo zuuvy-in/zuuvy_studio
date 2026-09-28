@@ -133,6 +133,36 @@ export type Link = z.infer<typeof Link>;
 // ---------------------------------------------------------------------------
 
 /** The data collections a `collection` section can show (defined in data.ts). */
+/**
+ * An icon: a Lucide name ("truck", "shield-check" — search_icons finds them)
+ * or the https address of an icon picture from an icon service.
+ */
+export const IconRef = z
+  .string()
+  .max(300)
+  .refine((v) => /^[a-z0-9]+(-[a-z0-9]+)*$/.test(v) || /^https:\/\//i.test(v), 'an icon is a Lucide name like "truck" or an https URL');
+
+/**
+ * How one section looks, beyond its block: background, texture, the shape of
+ * its lower edge, its breathing room and how its content enters. Optional so
+ * trees saved before it existed are unchanged; absent reads as plain.
+ */
+export const SectionStyle = z
+  .object({
+    background: z
+      .enum(["default", "surface", "primary", "dark", "gradient", "mesh", "image"])
+      .describe("default: page colour; surface: panel colour; primary: brand colour; dark: deep, inverted; gradient: primary into accent; mesh: soft colour glows; image: the picture below, darkened for legible text"),
+    image: ImageUrl.describe("Background picture, for background: image"),
+    pattern: z.enum(["none", "dots", "grid", "noise"]).describe("A faint texture over the background"),
+    divider: z.enum(["none", "wave", "slant", "curve"]).describe("Shape of the section's bottom edge, flowing into the next"),
+    spacing: z.enum(["compact", "normal", "roomy"]),
+    animation: z
+      .enum(["auto", "rise", "fade", "zoom", "slide", "blur", "none"])
+      .describe("How its content enters as it scrolls into view; auto follows the theme's motion"),
+  })
+  .partial();
+export type SectionStyle = z.infer<typeof SectionStyle>;
+
 export const DATA_COLLECTION_KEYS = [
   "profile", "projects", "experience", "education", "skills", "services",
   "testimonials", "awards", "publications", "clients", "gallery",
@@ -147,13 +177,25 @@ export const BLOCKS = {
     secondaryCta: Link.optional(),
     image: ImageUrl.optional(),
     align: z.enum(["left", "center"]).default("center"),
+    layout: z
+      .enum(["classic", "split", "fullbleed", "stacked"])
+      .optional()
+      .describe("classic: copy with the picture beside it when there is one; split: half copy, half picture edge to edge; fullbleed: the picture fills the hero behind the copy; stacked: big centred copy with a wide picture below"),
+    backdrop: z.enum(["glow", "mesh", "grid", "spotlight", "none"]).optional().describe("Decoration behind the copy (default glow)"),
+    highlight: Text(60).optional().describe("Words from the heading, copied exactly, to paint in the brand gradient"),
+    rotating: z.array(Text(30)).max(5).optional().describe("Words that take turns after the heading: ['cakes', 'flowers', 'smiles']"),
+    badges: z.array(Text(40)).max(4).optional().describe("Small proof chips under the buttons: '4.9★ on Google', 'Since 1998'"),
   }),
   features: z.object({
     heading: Text(140),
     subheading: Text(400).optional(),
     columns: z.union([z.literal(2), z.literal(3), z.literal(4)]).default(3),
+    layout: z
+      .enum(["cards", "bento", "icons", "list"])
+      .optional()
+      .describe("cards: equal cards; bento: a mosaic where the first item is large; icons: open icon + text, no boxes; list: a two-column checklist"),
     items: z
-      .array(z.object({ title: Text(80), body: Text(400) }))
+      .array(z.object({ title: Text(80), body: Text(400), icon: IconRef.optional() }))
       .min(1)
       .max(12),
   }),
@@ -178,10 +220,14 @@ export const BLOCKS = {
     image: ImageUrl.optional(),
     imageSide: z.enum(["left", "right"]).default("right"),
     cta: Link.optional(),
+    eyebrow: Text(60).optional(),
+    bullets: z.array(z.object({ text: Text(120), icon: IconRef.optional() })).max(6).optional().describe("Short points with icons under the body"),
+    badge: Text(40).optional().describe("A floating label on the picture: 'Handmade in Patna'"),
   }),
   gallery: z.object({
     heading: Text(140).optional(),
     columns: z.union([z.literal(2), z.literal(3), z.literal(4)]).default(3),
+    layout: z.enum(["grid", "masonry", "carousel"]).optional().describe("carousel scrolls sideways with snap"),
     items: z
       .array(
         z.object({
@@ -196,14 +242,16 @@ export const BLOCKS = {
   }),
   testimonials: z.object({
     heading: Text(140),
+    layout: z.enum(["cards", "marquee", "spotlight"]).optional().describe("marquee: an endless scrolling row; spotlight: one big quote first"),
     items: z
-      .array(z.object({ quote: Text(600), author: Text(80), role: Text(80).optional() }))
+      .array(z.object({ quote: Text(600), author: Text(80), role: Text(80).optional(), rating: z.number().int().min(1).max(5).optional() }))
       .min(1)
-      .max(9),
+      .max(12),
   }),
   stats: z.object({
+    heading: Text(140).optional(),
     items: z
-      .array(z.object({ value: Text(20), label: Text(60) }))
+      .array(z.object({ value: Text(20).describe("Counts up when it starts with a number: '12,000+', '4.9★', '25 yrs'"), label: Text(60), icon: IconRef.optional() }))
       .min(1)
       .max(6),
   }),
@@ -218,6 +266,33 @@ export const BLOCKS = {
     heading: Text(140),
     body: Text(400).optional(),
     button: Link,
+    secondary: Link.optional(),
+    style: z.enum(["banner", "glow", "split", "minimal"]).optional().describe("banner: a solid brand panel; glow: dark panel with moving colour; split: text left, buttons right; minimal: no panel"),
+  }),
+  logos: z.object({
+    heading: Text(140).optional().describe("e.g. 'Trusted by 300+ Patna businesses'"),
+    items: z
+      .array(z.object({ name: Text(60), image: ImageUrl.optional(), href: Href.optional() }))
+      .min(2)
+      .max(24)
+      .describe("Clients, partners, brands stocked or press; names are shown as wordmarks when there is no logo image"),
+    marquee: z.boolean().default(true).describe("Scroll endlessly instead of a still row"),
+  }),
+  marquee: z.object({
+    items: z.array(Text(40)).min(2).max(16).describe("Short phrases in a moving band: 'Free delivery', 'Handmade', 'Since 1998'"),
+    icon: IconRef.optional().describe("Separator between phrases"),
+    speed: z.enum(["slow", "normal", "fast"]).default("normal"),
+    tone: z.enum(["primary", "dark", "outline"]).default("primary"),
+  }),
+  steps: z.object({
+    heading: Text(140),
+    subheading: Text(400).optional(),
+    layout: z.enum(["timeline", "cards"]).default("cards"),
+    items: z
+      .array(z.object({ title: Text(80), body: Text(300), icon: IconRef.optional() }))
+      .min(2)
+      .max(6)
+      .describe("How it works, in order"),
   }),
   collection: z.object({
     collection: z.enum(DATA_COLLECTION_KEYS).describe("Which data collection this section shows; its entries are edited as data, not here"),
@@ -245,7 +320,7 @@ export const BLOCK_TYPES = Object.keys(BLOCKS) as BlockType[];
 export type BlockProps<T extends BlockType> = z.infer<(typeof BLOCKS)[T]>;
 
 const sectionOf = <T extends BlockType>(type: T) =>
-  z.object({ id: z.string().min(1).max(40), type: z.literal(type), props: BLOCKS[type] });
+  z.object({ id: z.string().min(1).max(40), type: z.literal(type), props: BLOCKS[type], style: SectionStyle.optional() });
 
 export const Section = z.discriminatedUnion("type", [
   sectionOf("hero"),
@@ -259,6 +334,9 @@ export const Section = z.discriminatedUnion("type", [
   sectionOf("faq"),
   sectionOf("cta"),
   sectionOf("contact"),
+  sectionOf("logos"),
+  sectionOf("marquee"),
+  sectionOf("steps"),
   sectionOf("collection"),
 ]);
 export type Section = z.infer<typeof Section>;

@@ -42,6 +42,9 @@ export const BLOCK_LABELS: Record<Section["type"], string> = {
   faq: "FAQ",
   cta: "Call to action",
   contact: "Contact",
+  logos: "Logos",
+  marquee: "Marquee",
+  steps: "Steps",
   collection: "Collection",
 };
 
@@ -159,7 +162,10 @@ export function diffTrees(from: SiteTree, to: SiteTree): Change[] {
         });
         continue;
       }
-      const fields = fieldChanges(prev.props, s.props);
+      const fields = [
+        ...fieldChanges(prev.props, s.props),
+        ...fieldChanges(prev.style ?? {}, s.style ?? {}).map((f) => ({ ...f, field: `style.${f.field}` })),
+      ];
       if (fields.length) {
         changes.push({
           kind: "section-changed",

@@ -310,3 +310,27 @@ for `cart.calculate`, `checkout.fields`, `checkout.validate` and `order.placed`
 SSRF guard as reference fetching, https only, no redirects, 3 s, 64 KB. A
 failing plugin is skipped and its error kept; it can shape a sale, never break
 one.
+
+## Design range, icons and skills
+
+**Section styles** (`core SectionStyle`, op `styleSection`, tool `style_section`). Every section can carry a
+style beside its props: background (default, surface, primary, dark, gradient, mesh, image), pattern
+(dots, grid, noise), divider (wave, slant, curve — the section's bottom edge), spacing and its scroll entrance.
+The runtime wraps each section in `.zs-block` carrying these as data attributes; dark, primary, gradient and
+image backgrounds redefine the colour variables inside the section, so every block inverts correctly without
+knowing it. Optional, so older trees are unchanged.
+
+**Richer blocks**: hero layouts (classic, split, fullbleed, stacked), backdrops, a gradient `highlight`, rotating
+words and proof badges; features layouts (cards, bento, icons, list) with icons; imageText bullets, eyebrow and a
+floating badge; gallery masonry and carousel; testimonials marquee and spotlight with ratings; stats that count up;
+CTA styles (banner, glow, split, minimal); new `logos`, `marquee` and `steps` blocks. All CSS, no client script;
+motion respects `prefers-reduced-motion` and the theme's motion setting, and anything a browser cannot animate is
+drawn in its final state.
+
+**Icons**: an `icon` field is a Lucide name (drawn inline by `runtime/src/icons.tsx` from the bundled
+`@iconify-json/lucide` set) or an https picture from an icon service (e.g. Icons8 through a remote MCP server).
+The editor refuses names that do not exist with suggestions (`ai/src/icons.ts`); `design__search_icons` finds
+names by meaning, locally and through Iconify's public search when reachable.
+
+**Skills** (`ai/src/skills.ts`): web design, content and animation guidance written for these blocks. They are
+part of the build and plan prompts, and the design kit serves them as MCP prompts and a `skill` tool.

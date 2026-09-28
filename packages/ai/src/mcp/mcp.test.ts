@@ -49,6 +49,14 @@ describe("MCP tools", () => {
     expect(recipe.sections.join(" ")).toContain("productGrid");
   });
 
+  it("finds icons by meaning, and serves the skills", async () => {
+    const mcp = await connectMcp({ designKit: { fetch: (async () => { throw new Error("offline"); }) as unknown as typeof fetch } });
+    closers.push(() => mcp.close());
+    const found = JSON.parse(await mcp.tools.find((t) => t.name === "design__search_icons")!.run({ query: "fast delivery" }));
+    expect(found.icons).toEqual(expect.arrayContaining(["truck", "zap"]));
+    expect(await mcp.tools.find((t) => t.name === "design__skill")!.run({ name: "animation" })).toMatch(/Animation skill/);
+  });
+
   it("returns a tool's own error to the model as a tool error", async () => {
     const mcp = await connectMcp();
     closers.push(() => mcp.close());

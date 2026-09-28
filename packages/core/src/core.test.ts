@@ -204,3 +204,29 @@ describe("store commerce settings", () => {
     expect(diffTrees(tree, again).map((c) => c.label)).toContain("Cart and checkout");
   });
 });
+
+describe("section styles and the richer blocks", () => {
+  it("styles a section, clears it, and refuses an image background without a picture", () => {
+    const tree = getTemplate("landing-launch").build({ businessName: "Asha" });
+    const id = tree.pages[0]!.sections[2]!.id;
+    const styled = applyOps(tree, [{ op: "styleSection", section: id, style: { background: "dark", pattern: "grid", divider: "wave" } }]);
+    expect(styled.pages[0]!.sections[2]!.style).toMatchObject({ background: "dark", pattern: "grid", divider: "wave" });
+    const less = applyOps(styled, [{ op: "styleSection", section: id, style: { pattern: null } }]);
+    expect(less.pages[0]!.sections[2]!.style).toEqual({ background: "dark", divider: "wave" });
+    expect(applyOps(less, [{ op: "styleSection", section: id, style: {} }]).pages[0]!.sections[2]!.style).toBeUndefined();
+    expect(() => applyOps(tree, [{ op: "styleSection", section: id, style: { background: "image" } }])).toThrow(/needs an image/);
+    expect(() => applyOps(tree, [{ op: "styleSection", section: id, style: { background: "neon" } }])).toThrow(OpError);
+    expect(diffTrees(tree, styled).some((c) => "fields" in c && c.fields.some((f) => f.field === "style.background"))).toBe(true);
+  });
+
+  it("takes logos, marquee and steps blocks, and icons as names or URLs", () => {
+    const tree = getTemplate("landing-launch").build({ businessName: "Asha" });
+    const next = applyOps(tree, [
+      { op: "addSection", page: "/", type: "marquee", props: { items: ["Eggless", "Same-day"], icon: "sparkle" } },
+      { op: "addSection", page: "/", type: "logos", props: { items: [{ name: "Swiggy" }, { name: "Zomato" }] } },
+      { op: "addSection", page: "/", type: "steps", props: { heading: "How", items: [{ title: "a", body: "b", icon: "https://img.icons8.com/x.png" }, { title: "c", body: "d" }] } },
+    ]);
+    expect(next.pages[0]!.sections.slice(-3).map((s) => s.type)).toEqual(["marquee", "logos", "steps"]);
+    expect(() => applyOps(tree, [{ op: "addSection", page: "/", type: "marquee", props: { items: ["x", "y"], icon: "Not An Icon!" } }])).toThrow(OpError);
+  });
+});
