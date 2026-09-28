@@ -33,7 +33,7 @@ export default async function MediaPage() {
           </ActionForm>
         </Card>
         <Card>
-          <CardHeader title="Create with AI" description="Amazon Nova Canvas. No text or logos in pictures; real people's faces are avoided." />
+          <CardHeader title="Create with AI" description="Amazon Nova 2 Omni. No text or logos in pictures; real people's faces are avoided." />
           <ActionForm action={generateAction} className="space-y-3 p-5" resetOnOk>
             <textarea name="prompt" rows={2} className="field" placeholder="A bright, tidy mobile accessories shop counter with neatly arranged phone cases, warm morning light" disabled={!canGenerate} />
             <div className="flex flex-wrap gap-2">

@@ -142,7 +142,7 @@ Beyond the tree, the agent can:
   Adding and filling empty fields apply at once; **changing or removing
   what exists is held as a proposal** (`ai_meta.proposals`) the owner allows
   on the version page, applied as a new version;
-- **make pictures** (`generate_image`, Amazon Nova Canvas on Bedrock, stored
+- **make pictures** (`generate_image`, Amazon Nova 2 Omni on Bedrock, stored
   in the media library, steered to the brand palette, 4 per request);
 - **look at reference websites** (`fetch_reference`: a guarded fetch —
   public addresses only, pinned DNS, re-checked redirects — reduced to

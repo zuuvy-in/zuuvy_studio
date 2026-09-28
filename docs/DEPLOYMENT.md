@@ -41,8 +41,8 @@ Optionally add required reviewers to approve each deploy. Then add these
 | `CERTIFICATE_ARN` | *(optional)* `arn:aws:acm:ap-south-1:…` | An issued ACM certificate for `zuuvy.site` + `*.zuuvy.site` |
 | `DOMAIN_READY` | *(optional)* `true` | Set once `zuuvy.site`'s nameservers point at the Route 53 zone. Until then (unset) the studio and sites are served on CloudFront `*.cloudfront.net` addresses — see "Before the domain is ready" |
 | `ZSITE_AI_MODEL` | *(optional)* `apac.amazon.nova-pro-v1:0` | Bedrock model for AI edits; empty = that default |
-| `ZSITE_IMAGE_MODEL` | *(optional)* `amazon.nova-canvas-v1:0` | Bedrock image model for AI pictures |
-| `ZSITE_IMAGE_REGION` | *(optional)* `us-east-1` | Where that model is served (Nova Canvas is not in Mumbai) |
+| `ZSITE_IMAGE_MODEL` | *(optional)* `global.amazon.nova-2-omni-v1:0` | Bedrock image model for AI pictures (Nova Canvas is Legacy) |
+| `ZSITE_IMAGE_REGION` | *(optional)* `ap-south-1` | Region the image model is called from; empty = the stack's |
 | `EMAIL_ENABLED` | *(optional)* `true` | Send email through SES. Leave unset until the DKIM records are in and SES production access is granted — see "Email" |
 | `DB_MIN_ACU` | *(optional)* `0.5` | Aurora minimum capacity; `0` pauses when idle |
 | `DB_ENGINE_VERSION` | *(optional)* `16.11` | Aurora PostgreSQL version. AWS retires old minor versions; list what the region offers with `aws rds describe-db-engine-versions --engine aurora-postgresql --region ap-south-1 --query "DBEngineVersions[].EngineVersion"` |
@@ -108,9 +108,11 @@ the "Migrate the database" step of the workflow log — sign in at
 `https://studio.zuuvy.site/login`, then open **Platform admin** in the
 sidebar to add more admins. (Locally: `npm run admin:create`.)
 
-**Pictures.** Nova Canvas starts with a zero quota like every Bedrock model:
-Bedrock console → **us-east-1** → Quotas → *Nova Canvas* → request, e.g.
-10 images per minute. Until then "Create picture" explains the refusal.
+**Pictures.** Generated with Amazon Nova 2 Omni through its global inference
+profile. Bedrock console (ap-south-1) → Quotas → *Nova 2 Omni, Global
+cross-region*: request requests- and tokens-per-minute (new accounts start at
+0). Until then "Create picture" shows AWS's refusal. Nova Canvas is Legacy:
+accounts that have not used it in 30 days are refused.
 If the account has *account-level* S3 Block Public Access switched on, the
 media bucket's public-read policy is refused — turn that setting off for the
 account or pictures will not display.

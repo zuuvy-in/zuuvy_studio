@@ -63,3 +63,32 @@ describe("custom domain names", () => {
     expect(nextCheckDelay(10 * 3600)).toBe(1800);
   });
 });
+
+describe("picture models", async () => {
+  const { renderImage, imageApi, imageSize } = await import("./media");
+
+  it("uses Converse for Nova 2 Omni and reads the picture and its size from the reply", async () => {
+    // A 3×2 PNG header is enough for the size reader.
+    const png = new Uint8Array(33);
+    png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 3, 0, 0, 0, 2]);
+    const sent: unknown[] = [];
+    const client = {
+      async send(cmd: { input: unknown; constructor: { name: string } }) {
+        sent.push(cmd);
+        return { stopReason: "end_turn", output: { message: { role: "assistant", content: [{ image: { format: "png", source: { bytes: png } } }] } } };
+      },
+    };
+    const out = await renderImage({ prompt: "A tidy shop counter", aspect: "wide", style: "flat" }, { client: client as never, model: { model: "global.amazon.nova-2-omni-v1:0", region: "ap-south-1" } });
+    expect(imageApi("global.amazon.nova-2-omni-v1:0")).toBe("converse");
+    expect(imageApi("amazon.nova-canvas-v1:0")).toBe("invoke");
+    expect(out).toMatchObject({ width: 3, height: 2, contentType: "image/png", ext: "png" });
+    expect((sent[0] as { constructor: { name: string } }).constructor.name).toBe("ConverseCommand");
+    expect(JSON.stringify((sent[0] as { input: unknown }).input)).toMatch(/16:9/);
+    expect(imageSize(new Uint8Array([1, 2, 3]))).toBeNull();
+  });
+
+  it("explains a legacy model in words", async () => {
+    const client = { async send() { throw Object.assign(new Error("Access denied. This Model is marked by provider as Legacy"), { name: "ResourceNotFoundException" }); } };
+    await expect(renderImage({ prompt: "x picture of a shop", aspect: "square", style: "photo" }, { client: client as never, model: { model: "amazon.nova-canvas-v1:0", region: "us-east-1" } })).rejects.toThrow(/legacy model/);
+  });
+});

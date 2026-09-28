@@ -1,4 +1,4 @@
-import { NotFound, getSite, isUuid, withTenant } from "@zsite/platform";
+import { NotFound, getSite, isUuid, latestVersion, withTenant } from "@zsite/platform";
 import { notFound } from "next/navigation";
 import { Tabs } from "@/components/nav";
 import { Badge, ButtonLink, Icon } from "@/components/ui";
@@ -8,7 +8,11 @@ export default async function SiteLayout({ children, params }: { children: React
   const { siteId } = await params;
   const session = await requireSession();
   if (!isUuid(siteId)) notFound();
-  const site = await withTenant(session.tenant.id, (tx) => getSite(tx, siteId)).catch((e) => {
+  const { site, usesCollections } = await withTenant(session.tenant.id, async (tx) => {
+    const site = await getSite(tx, siteId);
+    const tree = (await latestVersion(tx, siteId)).tree;
+    return { site, usesCollections: Boolean(tree?.pages.some((p) => p.sections.some((s) => s.type === "collection"))) };
+  }).catch((e) => {
     if (e instanceof NotFound) notFound();
     throw e;
   });
@@ -30,7 +34,8 @@ export default async function SiteLayout({ children, params }: { children: React
       <Tabs
         tabs={[
           { href: `/sites/${site.id}/versions`, label: "Versions" },
-          { href: `/sites/${site.id}/content`, label: site.kind === "portfolio" ? "Portfolio content" : "Content" },
+          // Portfolio content is for portfolios (and a site that still shows it after a type change).
+          ...(site.kind === "portfolio" || usesCollections ? [{ href: `/sites/${site.id}/content`, label: "Portfolio content" }] : []),
           { href: `/sites/${site.id}/settings`, label: "Settings" },
         ]}
       />

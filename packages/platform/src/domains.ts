@@ -71,7 +71,22 @@ export function domainTarget(): string {
  * "https://WWW.MyShop.in/about" → "www.myshop.in". International names come
  * back in their ASCII (punycode) form, which is what DNS and certificates use.
  */
-export function normaliseHostname(raw: string): string {
+/**
+ * The platform's own root and its www twin. Only a platform admin may connect
+ * them (to the site that should answer at zuuvy.site, the landing page); every
+ * other name under the platform domain stays a site address, never a custom
+ * domain. Both are covered by the platform certificate, so none is requested.
+ */
+export function platformHosts(): string[] {
+  const root = config.platformDomain().toLowerCase();
+  return [root, `www.${root}`];
+}
+
+export function isPlatformHost(hostname: string): boolean {
+  return platformHosts().includes(hostname.toLowerCase());
+}
+
+export function normaliseHostname(raw: string, opts: { platformAdmin?: boolean } = {}): string {
   let s = raw.trim().toLowerCase();
   if (!s) throw new UserError("Enter a domain, like www.yourbusiness.in.");
   if (!/^[a-z]+:\/\//.test(s)) s = `https://${s}`;
@@ -89,6 +104,7 @@ export function normaliseHostname(raw: string): string {
   }
   if (!/[a-z]/.test(labels.at(-1)!)) throw new UserError("That is not a domain name.");
   const platform = config.platformDomain().toLowerCase();
+  if (opts.platformAdmin && isPlatformHost(host)) return host;
   if (host === platform || host.endsWith(`.${platform}`)) {
     throw new UserError(`Addresses on ${platform} are set as the site's Zuuvy address, not as a custom domain.`);
   }
@@ -107,8 +123,14 @@ export async function listDomains(tx: Tx, siteId: string): Promise<Domain[]> {
   return tx.query<Domain>(`select ${COLUMNS} from site_domains where site_id = $1 order by created_at`, [siteId]);
 }
 
-export async function addDomain(tenantId: string, siteId: string, raw: string, userId: string | null): Promise<Domain> {
-  const hostname = normaliseHostname(raw);
+export async function addDomain(
+  tenantId: string,
+  siteId: string,
+  raw: string,
+  userId: string | null,
+  opts: { platformAdmin?: boolean } = {},
+): Promise<Domain> {
+  const hostname = normaliseHostname(raw, opts);
   return withTenant(tenantId, async (tx) => {
     await tx.get("select id from sites where id = $1", [siteId], "site");
     const count = await tx.get<{ n: number }>("select count(*) as n from site_domains where site_id = $1", [siteId]);
@@ -274,8 +296,9 @@ export async function provisionDomain(tenantId: string, domainId: string, starte
   const d = await loadDomain(tenantId, domainId);
   if (!d) return; // removed meanwhile
   const provider = domainProvider();
-  if (!provider) {
-    // No load balancer to manage (local): DNS alone decides.
+  if (!provider || isPlatformHost(d.hostname)) {
+    // No load balancer to manage (local), or a name the platform certificate
+    // already covers: DNS alone decides.
     await updateDomain(tenantId, domainId, { status: "verifying" });
     await withTenant(tenantId, (tx) => enqueue(tx, "domain.check", { domainId, startedAt }));
     return;
@@ -297,7 +320,7 @@ export async function provisionDomain(tenantId: string, domainId: string, starte
 export async function checkDomain(tenantId: string, domainId: string, startedAt: string, manual = false): Promise<DomainStatus> {
   const d = await loadDomain(tenantId, domainId);
   if (!d || d.status === "active" || d.status === "failed") return d?.status ?? "failed";
-  const provider = domainProvider();
+  const provider = isPlatformHost(d.hostname) ? null : domainProvider();
   const problems: string[] = [];
   let certOk = !provider;
   let attached = d.attached;

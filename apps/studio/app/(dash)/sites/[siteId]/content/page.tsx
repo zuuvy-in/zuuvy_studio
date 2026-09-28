@@ -1,5 +1,6 @@
 import { COLLECTIONS, type CollectionSpec, type DataItem, type FieldSpec, itemTitle } from "@zsite/core";
 import { getSite, latestVersion, listAssets, withTenant } from "@zsite/platform";
+import { notFound } from "next/navigation";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Badge, Card, CardHeader, Icon } from "@/components/ui";
 import { requireSession } from "@/lib/session";
@@ -56,6 +57,8 @@ export default async function ContentPage({ params }: { params: Promise<{ siteId
     head: await latestVersion(tx, siteId),
     media: await listAssets(tx, 100),
   }));
+  const usesCollections = (head.tree?.pages ?? []).some((p) => p.sections.some((s) => s.type === "collection"));
+  if (site.kind !== "portfolio" && !usesCollections) notFound();
   const data = head.data ?? {};
   const shown = new Set(
     (head.tree?.pages ?? []).flatMap((p) => p.sections).filter((s) => s.type === "collection").map((s) => (s.props as { collection: string }).collection),
@@ -72,7 +75,7 @@ export default async function ContentPage({ params }: { params: Promise<{ siteId
       </datalist>
       <Card className="flex flex-col gap-2 p-5 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
         <p>
-          The facts your {site.kind === "portfolio" ? "portfolio" : "site"} shows — profile, projects, experience and more — kept as tables.
+          The facts your portfolio shows — profile, projects, experience and more — kept as tables.
           Edit them here or ask the AI. <strong className="text-slate-800">Every save is a new version of v{head.number}</strong>, so the
           version before it is your backup; restoring a version lets you reset any of these tables from it.
         </p>
