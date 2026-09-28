@@ -130,3 +130,19 @@ describe("collections are for portfolios", () => {
     expect(createSiteTools(tree()).tools.map((t) => t.name)).toContain("add_entry");
   });
 });
+
+describe("an answer that claims changes it never made", () => {
+  it("is asked once more, and the second attempt's edits are kept with both attempts' tokens", async () => {
+    const { editSite } = await import("./agent");
+    let call = 0;
+    const runner = (async ({ tools }: { tools: { name: string; run: (i: unknown) => unknown }[] }) => {
+      call++;
+      if (call === 2) await tools.find((t) => t.name === "set_theme")!.run({ colors: { primary: "#0f766e" } });
+      return { finalText: call === 1 ? "I have updated the hero." : "Changed the primary colour.", model: "m", usage: { input_tokens: 10, output_tokens: 2, cache_read_input_tokens: 0, requests: 1 }, stopReason: "end_turn", refused: false };
+    }) as never;
+    const r = await editSite({ tree: tree(), prompt: "Teal please", context: { businessName: "X", siteKind: "store", categories: [], productCount: 0, catalogueSource: null }, runner });
+    expect(call).toBe(2);
+    expect(r.tree.theme.colors.primary).toBe("#0f766e");
+    expect(r.usage).toMatchObject({ input_tokens: 20, requests: 2 });
+  });
+});

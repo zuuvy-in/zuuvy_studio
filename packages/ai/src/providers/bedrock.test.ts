@@ -82,11 +82,12 @@ describe("bedrock provider (Converse loop)", () => {
     await expect(editSite({ tree: tree(), prompt: "x", context, runner: bedrockProvider({ client }) })).rejects.toThrow(/declined/);
   });
 
-  it("says when nothing was changed", async () => {
-    const { client } = fakeBedrock([done("That is already how the site looks.")]);
+  it("says when nothing was changed (after asking once more)", async () => {
+    const { client, requests } = fakeBedrock([done("That is already how the site looks."), done("That is already how the site looks.")]);
     await expect(editSite({ tree: tree(), prompt: "x", context, runner: bedrockProvider({ client }) })).rejects.toThrow(
       "The AI made no changes: That is already how the site looks.",
     );
+    expect(requests).toHaveLength(2);
   });
 
   it("explains AWS errors in words", async () => {

@@ -89,6 +89,47 @@ describe("picture models", async () => {
 
   it("explains a legacy model in words", async () => {
     const client = { async send() { throw Object.assign(new Error("Access denied. This Model is marked by provider as Legacy"), { name: "ResourceNotFoundException" }); } };
-    await expect(renderImage({ prompt: "x picture of a shop", aspect: "square", style: "photo" }, { client: client as never, model: { model: "amazon.nova-canvas-v1:0", region: "us-east-1" } })).rejects.toThrow(/legacy model/);
+    const lister = { async send() { return {}; } };
+    await expect(renderImage({ prompt: "x picture of a shop", aspect: "square", style: "photo" }, { client: client as never, lister: lister as never, model: { model: "amazon.nova-canvas-v1:0", region: "us-east-1" } })).rejects.toThrow(/Legacy/);
+  });
+});
+
+describe("finding an image model the account can call", async () => {
+  const { renderImage } = await import("./media");
+  it("replaces an id Bedrock calls invalid with the profile Bedrock lists, once", async () => {
+    const png = new Uint8Array(33);
+    png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 8, 0, 0, 0, 8]);
+    const tried: string[] = [];
+    const client = {
+      async send(cmd: { input: { modelId: string } }) {
+        tried.push(cmd.input.modelId);
+        if (cmd.input.modelId === "global.amazon.nova-2-omni-v1:0") {
+          throw Object.assign(new Error("The provided model identifier is invalid."), { name: "ValidationException" });
+        }
+        return { output: { message: { role: "assistant", content: [{ image: { format: "png", source: { bytes: png } } }] } } };
+      },
+    };
+    const lister = {
+      async send(cmd: { constructor: { name: string } }) {
+        if (cmd.constructor.name === "ListInferenceProfilesCommand") {
+          return { inferenceProfileSummaries: [{ inferenceProfileId: "apac.amazon.nova-2-omni-v1:0", status: "ACTIVE" }, { inferenceProfileId: "apac.amazon.nova-pro-v1:0" }] };
+        }
+        return { modelSummaries: [] };
+      },
+    };
+    const out = await renderImage(
+      { prompt: "A tidy shop counter", aspect: "square", style: "photo" },
+      { client: client as never, lister: lister as never, model: { model: "global.amazon.nova-2-omni-v1:0", region: "ap-south-1" } },
+    );
+    expect(tried).toEqual(["global.amazon.nova-2-omni-v1:0", "apac.amazon.nova-2-omni-v1:0"]);
+    expect(out.width).toBe(8);
+  });
+
+  it("says plainly when Bedrock lists nothing usable", async () => {
+    const client = { async send() { throw Object.assign(new Error("The provided model identifier is invalid."), { name: "ValidationException" }); } };
+    const lister = { async send() { return { inferenceProfileSummaries: [], modelSummaries: [{ modelId: "amazon.nova-canvas-v1:0", modelLifecycle: { status: "LEGACY" } }] }; } };
+    await expect(
+      renderImage({ prompt: "A tidy shop counter", aspect: "square", style: "photo" }, { client: client as never, lister: lister as never, model: { model: "x.bad:0", region: "ap-south-1" } }),
+    ).rejects.toThrow(/No image model this account can use from ap-south-1/);
   });
 });
