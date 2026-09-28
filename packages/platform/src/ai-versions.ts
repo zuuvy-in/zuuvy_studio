@@ -10,7 +10,7 @@
  *   - usage: every attempt is recorded with its tokens, including the ones
  *     that end in an error, because those tokens were spent too.
  */
-import { AgentError, type Attachment, type EditResult, type ToolCapabilities, editSite } from "@zsite/ai";
+import { AgentError, type Attachment, type EditResult, type ToolCapabilities, editSite, parseMcpServers } from "@zsite/ai";
 import { type DataOp, applyBrand, applyDataOps, brandBrief, lockedThemeFields, paletteForImages } from "@zsite/core";
 import { productCategories } from "./catalog";
 import { config } from "./config";
@@ -102,6 +102,11 @@ export async function generateVersion(
       brand: brandBrief(brand),
       capabilities,
       data: base.data,
+      fallbackModel: config.aiFallbackModel(),
+      mcp: {
+        designKit: { unsplashKey: config.unsplashKey() || undefined, pexelsKey: config.pexelsKey() || undefined },
+        servers: parseMcpServers(config.mcpServers()),
+      },
     });
   } catch (e) {
     const err = e as AgentError;

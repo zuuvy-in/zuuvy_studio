@@ -17,6 +17,7 @@ const config: NextConfig = {
   // The AWS SDK resolves credential providers with dynamic imports; bundling can drop them.
   serverExternalPackages: [
     "pg",
+    "@modelcontextprotocol/sdk",
     "@aws-sdk/client-bedrock-runtime",
     "@aws-sdk/client-bedrock",
     "@aws-sdk/client-s3",

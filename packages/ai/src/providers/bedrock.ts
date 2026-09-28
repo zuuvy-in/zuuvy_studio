@@ -43,12 +43,18 @@ export type BedrockOptions = {
 
 const MAX_MALFORMED_RETRIES = 2;
 
+/** A tool's JSON Schema as the model should see it. `$schema` is dropped: it tells the model nothing and not every model accepts it. */
+export function toolJsonSchema(t: SiteTool): Record<string, unknown> {
+  const { $schema: _, ...schema } = t.jsonSchema ?? (z.toJSONSchema(t.inputSchema, { io: "input", unrepresentable: "any" }) as Record<string, unknown>);
+  return { type: "object", ...schema };
+}
+
 export function toBedrockTools(tools: SiteTool[]): Tool[] {
   return tools.map((t) => ({
     toolSpec: {
       name: t.name,
       description: t.description,
-      inputSchema: { json: z.toJSONSchema(t.inputSchema, { io: "input", unrepresentable: "any" }) as never },
+      inputSchema: { json: toolJsonSchema(t) as never },
     },
   }));
 }
@@ -64,6 +70,19 @@ async function runTool(tools: SiteTool[], block: NonNullable<ContentBlock.ToolUs
 }
 
 function explain(e: unknown, model: string, region: string): never {
+  try {
+    explainOnly(e, model, region);
+  } catch (out) {
+    // These say the model cannot be used here at all — worth trying another.
+    const name = (e as Error)?.name;
+    if (out instanceof AgentError && (name === "AccessDeniedException" || name === "ResourceNotFoundException" || name === "ValidationException")) {
+      out.unavailable = true;
+    }
+    throw out;
+  }
+}
+
+function explainOnly(e: unknown, model: string, region: string): never {
   const err = e as Error & { name?: string };
   switch (err.name) {
     case "CredentialsProviderError":

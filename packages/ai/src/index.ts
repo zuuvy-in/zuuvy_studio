@@ -7,3 +7,7 @@ export type { ConverseSender } from "./providers/bedrock";
 export { anthropicProvider } from "./providers/anthropic";
 export type { Provider, ProviderResult, Usage, Attachment, AttachmentFormat } from "./providers/types";
 export { DOCUMENT_FORMATS, IMAGE_FORMATS, isImageFormat } from "./providers/types";
+export { connectMcp, parseMcpServers, toolName } from "./mcp/client";
+export type { McpOptions, McpServerConfig, McpConnection } from "./mcp/client";
+export { createDesignKitServer, paletteFrom, contrast } from "./mcp/design-kit";
+export type { DesignKitOptions } from "./mcp/design-kit";

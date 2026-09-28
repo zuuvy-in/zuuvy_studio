@@ -118,7 +118,7 @@ describe("bedrock provider (Converse loop)", () => {
 
   it("suggests an inference profile only for a bare model id", async () => {
     const run = (model: string) =>
-      editSite({ tree: tree(), prompt: "x", context, model, runner: bedrockProvider({ client: failing("ValidationException", "Invocation of model ID amazon.nova-pro-v1:0 with on-demand throughput isn't supported."), region: "ap-south-1" }) }).catch((e) => e);
+      editSite({ tree: tree(), prompt: "x", context, model, fallbackModel: "", runner: bedrockProvider({ client: failing("ValidationException", "Invocation of model ID amazon.nova-pro-v1:0 with on-demand throughput isn't supported."), region: "ap-south-1" }) }).catch((e) => e);
     expect((await run("amazon.nova-pro-v1:0")).message).toMatch(/inference profile id \(e\.g\. "apac\.amazon\.nova-pro-v1:0"\)/);
     expect((await run("apac.amazon.nova-pro-v1:0")).message).not.toMatch(/inference profile/);
   });
