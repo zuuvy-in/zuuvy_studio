@@ -52,7 +52,8 @@ export type ProviderName = "bedrock" | "anthropic";
 
 export const DEFAULT_MODELS: Record<ProviderName, string> = {
   // Cross-region inference profile for Asia Pacific (the Mumbai region routes through it).
-  // Override with ZSITE_AI_MODEL, e.g. "us.amazon.nova-premier-v1:0" in us-east-1.
+  // Override with ZSITE_AI_MODEL: any Bedrock model with tool use, e.g.
+  // "global.anthropic.claude-sonnet-5" (Claude on Bedrock, through the same Converse loop).
   bedrock: "apac.amazon.nova-pro-v1:0",
   anthropic: "claude-opus-5",
 };

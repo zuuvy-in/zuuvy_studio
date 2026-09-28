@@ -40,7 +40,7 @@ Optionally add required reviewers to approve each deploy. Then add these
 | `DNS_PROVIDER` | *(optional)* `external` | DNS stays at the registrar; needs `CERTIFICATE_ARN`. See "Keeping DNS at the registrar" |
 | `CERTIFICATE_ARN` | *(optional)* `arn:aws:acm:ap-south-1:…` | An issued ACM certificate for `zuuvy.site` + `*.zuuvy.site` |
 | `DOMAIN_READY` | *(optional)* `true` | Set once `zuuvy.site`'s nameservers point at the Route 53 zone. Until then (unset) the studio and sites are served on CloudFront `*.cloudfront.net` addresses — see "Before the domain is ready" |
-| `ZSITE_AI_MODEL` | *(optional)* `apac.amazon.nova-pro-v1:0` | Bedrock model for AI edits; empty = that default |
+| `ZSITE_AI_MODEL` | *(optional)* `apac.amazon.nova-pro-v1:0` | Bedrock model for AI edits; empty = that default. Any Bedrock model with tool use works, e.g. `global.anthropic.claude-sonnet-5` |
 | `ZSITE_IMAGE_MODEL` | *(optional)* `global.amazon.nova-2-omni-v1:0` | Bedrock image model for AI pictures (Nova Canvas is Legacy) |
 | `ZSITE_IMAGE_REGION` | *(optional)* `ap-south-1` | Region the image model is called from; empty = the stack's |
 | `EMAIL_ENABLED` | *(optional)* `true` | Send email through SES. Leave unset until the DKIM records are in and SES production access is granted — see "Email" |

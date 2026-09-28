@@ -123,3 +123,14 @@ describe("bedrock provider (Converse loop)", () => {
     expect((await run("apac.amazon.nova-pro-v1:0")).message).not.toMatch(/inference profile/);
   });
 });
+
+describe("Claude through Bedrock", () => {
+  it("sends no sampling parameters to Claude, and keeps temperature 0 for Nova", async () => {
+    const claude = fakeBedrock([toolUse("t1", "set_theme", { colors: { primary: "#0f766e" } }), done("Teal.")]);
+    await editSite({ tree: tree(), prompt: "Teal", context, model: "global.anthropic.claude-sonnet-5", runner: bedrockProvider({ client: claude.client }) });
+    expect(claude.requests[0]!.inferenceConfig).toEqual({ maxTokens: 16000 });
+    const nova = fakeBedrock([toolUse("t1", "set_theme", { colors: { primary: "#0f766e" } }), done("Teal.")]);
+    await editSite({ tree: tree(), prompt: "Teal", context, runner: bedrockProvider({ client: nova.client }) });
+    expect(nova.requests[0]!.inferenceConfig).toMatchObject({ temperature: 0 });
+  });
+});
