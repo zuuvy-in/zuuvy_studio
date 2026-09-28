@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zuuvy Studio Engineering</title>
+<meta name="description" content="Zuuvy Studio (zuuvy_ai_site): features, architecture, high-level and low-level design, and a walkthrough of the code.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme:light;
+  --ink:#22314f;--signal:#e2503b;--ai:#6a5cf5;--ok:#15803d;
+  --paper:#f5f6f9;--surface:#ffffff;--line:#dfe3ec;--text:#16213a;--muted:#5b6679;--soft:#eef1f7;--code-bg:#f0f2f7;--code-text:#1d2a45;
+  --node:#ffffff;--node-line:#b9c3d6;--node-ink:#22314f;--edge:#8492ab;--zone:#eef1f7;
+  --display:"Space Grotesk","Geist",system-ui,sans-serif;--sans:"Geist",system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"Geist Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--ink:#c7d2ea;--paper:#0f1522;--surface:#161e2f;--line:#28324a;--text:#e8ecf4;--muted:#9aa5bb;--soft:#1c2539;--code-bg:#111a2b;--code-text:#d6deee;--node:#1a2336;--node-line:#3a4763;--node-ink:#e8ecf4;--edge:#6f7d98;--zone:#141c2d;--ai:#8b80ff;--ok:#4ade80}}
+:root[data-theme="dark"]{color-scheme:dark;--ink:#c7d2ea;--paper:#0f1522;--surface:#161e2f;--line:#28324a;--text:#e8ecf4;--muted:#9aa5bb;--soft:#1c2539;--code-bg:#111a2b;--code-text:#d6deee;--node:#1a2336;--node-line:#3a4763;--node-ink:#e8ecf4;--edge:#6f7d98;--zone:#141c2d;--ai:#8b80ff;--ok:#4ade80}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--paper);color:var(--text);font:15.5px/1.65 var(--sans);padding-inline:20px}
+.layout{max-width:1240px;margin:0 auto;display:grid;grid-template-columns:230px minmax(0,1fr);gap:48px}
+nav.toc{position:sticky;top:0;align-self:start;max-height:100vh;overflow:auto;padding-block:36px}
+nav.toc .brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-size:1.05rem;color:var(--ink);margin-bottom:24px}
+nav.toc .brand b{font-weight:700}
+nav.toc ol{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+nav.toc a{display:block;padding:5px 10px;border-radius:7px;color:var(--muted);text-decoration:none;font-size:.92rem}
+nav.toc a:hover,nav.toc a:focus-visible{background:var(--soft);color:var(--text);outline:none}
+nav.toc .sub a{padding-left:22px;font-size:.86rem}
+nav.toc .label{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:16px 10px 6px}
+main{padding-block:40px 80px;min-width:0}
+h1,h2,h3,h4{font-family:var(--display);letter-spacing:-.015em;text-wrap:balance;margin:0}
+h1{font-size:clamp(2rem,4.4vw,2.9rem);line-height:1.08;font-weight:700;color:var(--ink)}
+h2{font-size:clamp(1.45rem,2.6vw,1.9rem);font-weight:700;margin-bottom:6px}
+h3{font-size:1.12rem;font-weight:500;margin:26px 0 8px}
+h4{font-size:.98rem;font-weight:500;margin:0 0 4px}
+p{margin:0 0 12px;max-width:72ch}
+a{color:var(--ai)}
+.lede{color:var(--muted);font-size:1.06rem;max-width:70ch}
+.eyebrow{font:500 11.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+section{padding-block:40px;border-top:1px solid var(--line)}
+header.top{padding-bottom:36px}
+.facts{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.fact{font:13px var(--mono);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px 12px;color:var(--muted)}
+.fact b{color:var(--text);font-weight:500}
+code{font-family:var(--mono);font-size:.86em;background:var(--code-bg);color:var(--code-text);padding:1px 5px;border-radius:5px}
+pre{font:13px/1.55 var(--mono);background:var(--code-bg);color:var(--code-text);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow-x:auto;margin:10px 0 16px}
+pre code{background:none;padding:0;font-size:inherit}
+.c{color:var(--muted)}
+.k{color:var(--ai)}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.card p{font-size:.93rem;color:var(--muted);margin:0}
+.card .where{font:12px var(--mono);color:var(--muted);margin-top:10px}
+.tag{display:inline-block;font:500 11px var(--mono);letter-spacing:.04em;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:2px}
+.tag.live{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok)}
+.tag.next{background:var(--soft);color:var(--muted)}
+.diagram{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;overflow-x:auto;margin:12px 0 18px}
+.diagram svg{display:block;min-width:760px;width:100%;height:auto}
+svg .n{fill:var(--node);stroke:var(--node-line);stroke-width:1.2}
+svg .z{fill:var(--zone);stroke:var(--line);stroke-width:1}
+svg .t{fill:var(--node-ink);font:500 13px var(--sans)}
+svg .s{fill:var(--muted);font:11.5px var(--mono)}
+svg .zl{fill:var(--muted);font:500 11px var(--mono);letter-spacing:.06em}
+svg .e{stroke:var(--edge);stroke-width:1.4;fill:none}
+svg .ea{fill:var(--edge)}
+svg .ai{fill:color-mix(in srgb,var(--ai) 12%,var(--node));stroke:var(--ai)}
+svg .db{fill:color-mix(in srgb,var(--ink) 8%,var(--node));stroke:var(--ink)}
+svg .sig{fill:#e2503b}
+.table{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px;margin:10px 0 18px}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th,td{text-align:left;padding:9px 12px;border-top:1px solid var(--line);vertical-align:top}
+thead th{border-top:0;font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+td code{white-space:nowrap}
+.flow{list-style:none;margin:10px 0 18px;padding:0;counter-reset:step;display:grid;gap:0;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.flow li{counter-increment:step;display:grid;grid-template-columns:36px 150px 1fr;gap:12px;padding:10px 14px;border-top:1px solid var(--line);align-items:baseline}
+.flow li:first-child{border-top:0}
+.flow li::before{content:counter(step);font:500 12px var(--mono);color:var(--muted);text-align:right}
+.flow .who{font:12.5px var(--mono);color:var(--ink)}
+.flow .what{font-size:.93rem}
+.note{border-left:3px solid var(--ai);background:color-mix(in srgb,var(--ai) 6%,var(--surface));padding:10px 14px;border-radius:0 10px 10px 0;margin:10px 0 16px;font-size:.93rem}
+.note.warn{border-color:var(--signal);background:color-mix(in srgb,#e2503b 6%,var(--surface))}
+.tree{font:13px/1.7 var(--mono)}
+.tree .d{color:var(--ink);font-weight:500}
+.tree .x{color:var(--muted)}
+.read{counter-reset:r;list-style:none;margin:10px 0;padding:0;display:grid;gap:10px}
+.read li{counter-increment:r;display:grid;grid-template-columns:28px 1fr;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.read li::before{content:counter(r);font:500 13px var(--mono);color:var(--ai)}
+.read b{font-family:var(--mono);font-weight:500;font-size:.9rem}
+@media (max-width:900px){.layout{grid-template-columns:1fr;gap:0}nav.toc{position:static;max-height:none;padding-block:24px 0}nav.toc ol{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}.flow li{grid-template-columns:28px 1fr}.flow .who{grid-column:2}.flow .what{grid-column:2}}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <div class="brand">
+    <svg width="28" height="28" viewBox="0 0 100 100" aria-hidden="true"><defs><mask id="tm"><rect width="100" height="100" fill="#fff"/><rect x="20.5" y="20.5" width="11" height="11" rx="0.5" fill="#000"/><rect x="69.5" y="21.5" width="9" height="9" fill="#000"/><rect x="21.5" y="45.5" width="9" height="9" fill="#000"/></mask></defs><g mask="url(#tm)"><polyline points="26,26 74,26 74,50 26,50 26,74 74,74" fill="none" stroke="currentColor" stroke-width="11"/></g><rect x="18" y="18" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="5"/><rect x="64" y="64" width="21" height="21" rx="3.5" fill="#e2503b"/><rect x="68" y="68.5" width="13" height="2.6" rx="1.3" fill="#fff"/></svg>
+    <span><b>Zuuvy</b> Studio</span>
+  </div>
+  <ol>
+    <li><a href="#features">Features</a></li>
+    <li><a href="#architecture">Architecture</a></li>
+    <li class="label">High-level design</li>
+    <li class="sub"><a href="#hld-tenancy">Multi-tenancy</a></li>
+    <li class="sub"><a href="#hld-model">A site is data</a></li>
+    <li class="sub"><a href="#hld-ai">The AI agent</a></li>
+    <li class="sub"><a href="#hld-async">Async work</a></li>
+    <li class="sub"><a href="#hld-aws">AWS deployment</a></li>
+    <li class="label">Low-level design</li>
+    <li class="sub"><a href="#lld-schema">Schema</a></li>
+    <li class="sub"><a href="#lld-ai">Flow: AI edit</a></li>
+    <li class="sub"><a href="#lld-publish">Flow: publish + GitHub</a></li>
+    <li class="sub"><a href="#lld-order">Flow: an order</a></li>
+    <li class="sub"><a href="#lld-domain">Flow: custom domain</a></li>
+    <li class="sub"><a href="#lld-delete">Flow: export, delete, import</a></li>
+    <li class="sub"><a href="#lld-security">Security</a></li>
+    <li class="label">Code</li>
+    <li class="sub"><a href="#code-map">Repository map</a></li>
+    <li class="sub"><a href="#code-read">Read in this order</a></li>
+    <li class="sub"><a href="#code-snippets">Key code</a></li>
+    <li class="sub"><a href="#code-run">Run, test, ship</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="top">
+  <p class="eyebrow">zuuvy-in/zuuvy_ai_site · engineering overview · September 2026</p>
+  <h1>How Zuuvy Studio works</h1>
+  <p class="lede" style="margin-top:14px">An AI-first website builder for landing pages, portfolios and stores. It is aimed first at businesses already on Zuuvy. A business describes what it wants, the AI edits the site through validated operations, and every change is a version the owner previews before publishing. Products and orders flow to and from Zuuvy.</p>
+  <div class="facts">
+    <span class="fact"><b>TypeScript</b> · npm workspaces</span>
+    <span class="fact"><b>Next.js 16</b> · React 19</span>
+    <span class="fact"><b>PostgreSQL 16</b> · Row-Level Security</span>
+    <span class="fact"><b>Amazon Bedrock</b> · Nova Pro / Canvas</span>
+    <span class="fact"><b>AWS CDK</b> · ap-south-1</span>
+    <span class="fact"><b>81 tests</b> · vitest</span>
+  </div>
+</header>
+
+<section id="features">
+  <p class="eyebrow">01 · Product</p>
+  <h2>Features</h2>
+  <p class="lede">What a business can do today. Each card names the code that owns it.</p>
+  <div class="grid">
+    <div class="card"><h4>Templates → site in a minute <span class="tag live">live</span></h4><p>Store, landing page and portfolio templates. The site is live at name.zuuvy.site at once.</p><div class="where">core/src/templates</div></div>
+    <div class="card"><h4>Edit by describing <span class="tag live">live</span></h4><p>Plain-language requests become validated operations on the site. Attach a PDF, Word, Excel or screenshots, and name reference websites.</p><div class="where">ai/src/agent.ts · tools.ts</div></div>
+    <div class="card"><h4>Versions, compare, rollback <span class="tag live">live</span></h4><p>Every change is an immutable version: preview, diff, publish or roll back, and restore any version.</p><div class="where">platform/src/sites.ts</div></div>
+    <div class="card"><h4>Portfolio content as tables <span class="tag live">live</span></h4><p>Profile, projects, experience, education, skills, services and more, edited by hand or by the AI. The AI proposes changes to existing entries and the owner allows them. A restore resets any table.</p><div class="where">core/src/data.ts</div></div>
+    <div class="card"><h4>Brand kit <span class="tag live">live</span></h4><p>Logo, colours, fonts, motion, guidelines. Values the owner sets are fixed, and the AI chooses the rest.</p><div class="where">core/src/brand.ts</div></div>
+    <div class="card"><h4>Pictures &amp; motion <span class="tag live">live</span></h4><p>A media library: upload, or generate with Nova Canvas in the brand palette. Scroll animation is CSS-only.</p><div class="where">platform/src/media.ts · runtime/styles.css</div></div>
+    <div class="card"><h4>Stores &amp; inventory <span class="tag live">live</span></h4><p>Products from Zuuvy, from the studio (with stock counted when an order is accepted), or with no stock tracking. Cash-on-delivery orders with a customer tracking page.</p><div class="where">platform/src/inventory.ts · orders.ts</div></div>
+    <div class="card"><h4>Zuuvy integration <span class="tag live">live</span></h4><p>Listed products sync in, orders go out, and status comes back through signed webhooks. Stock is reserved by Zuuvy at confirmation.</p><div class="where">connectors/src/zuuvy</div></div>
+    <div class="card"><h4>Custom domains <span class="tag live">live</span></h4><p>Two CNAMEs, no nameserver change. An ACM certificate is attached to the load balancer by the worker.</p><div class="where">platform/src/domains.ts</div></div>
+    <div class="card"><h4>Source &amp; GitHub <span class="tag live">live</span></h4><p>Export a version as JSON source, edit it and import it back. GitHub sync makes a branch per version, and publishing merges it into main.</p><div class="where">core/src/source.ts · platform/src/git.ts</div></div>
+    <div class="card"><h4>Export, delete, import <span class="tag live">live</span></h4><p>A full site export is required before deletion. An export can be imported as a new site.</p><div class="where">platform/src/archive.ts</div></div>
+    <div class="card"><h4>Email alerts <span class="tag live">live</span></h4><p>SES from alerts@ (new orders) and no-reply@ (welcome, domain connected). Recipients are chosen during onboarding.</p><div class="where">platform/src/email.ts</div></div>
+    <div class="card"><h4>AI usage &amp; platform admin <span class="tag live">live</span></h4><p>Every AI attempt's tokens per person. An internal dashboard of all people, usage and versions. Superadmins manage admins.</p><div class="where">platform/src/usage.ts · admin.ts</div></div>
+    <div class="card"><h4>Payments, WhatsApp, marketplace <span class="tag next">next</span></h4><p>Tenant-owned gateways, or ours for a flat fee. Twilio WhatsApp with template approval sync. A plugin SDK and marketplace.</p><div class="where">docs/ARCHITECTURE.md · Not built yet</div></div>
+  </div>
+</section>
+
+<section id="architecture">
+  <p class="eyebrow">02 · System</p>
+  <h2>Architecture</h2>
+  <p class="lede">Three processes share one codebase and one database. The studio is where businesses work. The renderer serves every tenant's live site. The worker does everything that must survive a crash or wait on the outside world.</p>
+  <div class="diagram">
+    <svg viewBox="0 0 980 470" role="img" aria-label="System architecture: browsers reach the studio and renderer through the load balancer; both use the platform package and PostgreSQL; the worker drains the outbox and talks to Zuuvy, GitHub, SES, ACM and Bedrock.">
+      <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ea"/></marker></defs>
+      <text x="20" y="28" class="zl">PEOPLE</text>
+      <rect x="20" y="40" width="170" height="54" rx="10" class="n"/><text x="36" y="63" class="t">Business owner</text><text x="36" y="81" class="s">studio.zuuvy.site</text>
+      <rect x="20" y="110" width="170" height="54" rx="10" class="n"/><text x="36" y="133" class="t">Customer</text><text x="36" y="151" class="s">any site address</text>
+      <rect x="236" y="40" width="130" height="124" rx="10" class="n"/><text x="252" y="70" class="t">Load balancer</text><text x="252" y="90" class="s">HTTPS · SNI certs</text><text x="252" y="108" class="s">host rule:</text><text x="252" y="124" class="s">studio → studio</text><text x="252" y="140" class="s">else → renderer</text>
+      <path d="M190 67 H232" class="e" marker-end="url(#ar)"/><path d="M190 137 H232" class="e" marker-end="url(#ar)"/>
+      <rect x="400" y="20" width="360" height="300" rx="14" class="z"/><text x="414" y="40" class="zl">ECS FARGATE · ONE CODEBASE</text>
+      <rect x="416" y="52" width="160" height="70" rx="10" class="n"/><text x="432" y="77" class="t">studio (Next.js)</text><text x="432" y="95" class="s">dashboard, server</text><text x="432" y="110" class="s">actions, webhooks</text>
+      <rect x="590" y="52" width="156" height="70" rx="10" class="n"/><text x="606" y="77" class="t">renderer (Next.js)</text><text x="606" y="95" class="s">every live site,</text><text x="606" y="110" class="s">server components</text>
+      <path d="M366 80 H412" class="e" marker-end="url(#ar)"/><path d="M366 120 C470 150,560 150,660 124" class="e" marker-end="url(#ar)"/>
+      <rect x="416" y="140" width="330" height="80" rx="10" class="n"/><text x="432" y="164" class="t">@zsite/platform</text><text x="432" y="184" class="s">withTenant · sites · versions · orders</text><text x="432" y="200" class="s">domains · media · git · archive · email · outbox</text>
+      <rect x="416" y="236" width="160" height="70" rx="10" class="ai"/><text x="432" y="261" class="t">@zsite/ai</text><text x="432" y="279" class="s">agent + SiteTools,</text><text x="432" y="294" class="s">Bedrock / Anthropic</text>
+      <rect x="590" y="236" width="156" height="70" rx="10" class="n"/><text x="606" y="261" class="t">worker</text><text x="606" y="279" class="s">drains the outbox</text><text x="606" y="294" class="s">every 2 s</text>
+      <path d="M496 122 V136" class="e" marker-end="url(#ar)"/><path d="M668 122 V136" class="e" marker-end="url(#ar)"/><path d="M496 220 V232" class="e" marker-end="url(#ar)"/><path d="M668 236 V224" class="e" marker-end="url(#ar)"/>
+      <rect x="416" y="360" width="330" height="80" rx="12" class="db"/><text x="432" y="386" class="t">Aurora PostgreSQL 16</text><text x="432" y="406" class="s">shared tables · tenant_id · RLS as zsite_app</text><text x="432" y="422" class="s">outbox · SECURITY DEFINER lookups</text>
+      <path d="M580 320 V356" class="e" marker-end="url(#ar)"/>
+      <text x="800" y="28" class="zl">OUTSIDE</text>
+      <rect x="796" y="40" width="164" height="42" rx="9" class="ai"/><text x="810" y="66" class="t">Bedrock · Nova</text>
+      <rect x="796" y="92" width="164" height="42" rx="9" class="n"/><text x="810" y="118" class="t">Zuuvy API</text>
+      <rect x="796" y="144" width="164" height="42" rx="9" class="n"/><text x="810" y="170" class="t">GitHub API</text>
+      <rect x="796" y="196" width="164" height="42" rx="9" class="n"/><text x="810" y="222" class="t">SES · email</text>
+      <rect x="796" y="248" width="164" height="42" rx="9" class="n"/><text x="810" y="274" class="t">ACM + ALB API</text>
+      <rect x="796" y="300" width="164" height="42" rx="9" class="n"/><text x="810" y="326" class="t">S3 · media</text>
+      <path d="M576 262 C700 220,720 80,792 62" class="e" marker-end="url(#ar)"/>
+      <path d="M746 262 C770 240,770 120,792 113" class="e" marker-end="url(#ar)"/>
+      <path d="M746 268 H770 V165 H792" class="e" marker-end="url(#ar)"/>
+      <path d="M746 274 H776 V217 H792" class="e" marker-end="url(#ar)"/>
+      <path d="M746 282 H792 V270" class="e" marker-end="url(#ar)"/>
+      <path d="M746 296 C770 310,780 320,792 321" class="e" marker-end="url(#ar)"/>
+      <text x="800" y="380" class="s">Zuuvy → studio:</text><text x="800" y="396" class="s">signed webhooks</text><text x="800" y="412" class="s">/api/hooks/&lt;id&gt;</text>
+    </svg>
+  </div>
+  <div class="table"><table>
+    <thead><tr><th>Process</th><th>What it owns</th><th>Scales by</th></tr></thead>
+    <tbody>
+      <tr><td><code>apps/studio</code></td><td>Sign-in, dashboard, every mutation (server actions call <code>requireSession()</code> themselves), preview, export downloads, webhook receiver.</td><td>1 task (AI edits are long server actions; ALB idle timeout 180 s)</td></tr>
+      <tr><td><code>apps/renderer</code></td><td>Resolves the Host to a site and renders the published version with the same runtime the preview uses. Product pages, COD order form, order tracking.</td><td>2–6 tasks, CPU autoscaling</td></tr>
+      <tr><td><code>scripts/worker.ts</code></td><td>Outbox topics: <code>order.push</code>, <code>catalog.sync</code>, <code>domain.*</code>, <code>git.*</code>, <code>email.send</code>.</td><td>1 task; jobs claimed with <code>SKIP LOCKED</code>, so more is safe</td></tr>
+    </tbody></table></div>
+</section>
+
+<section id="hld-tenancy">
+  <p class="eyebrow">03 · High-level design</p>
+  <h2>Multi-tenancy: one database, isolation in Postgres</h2>
+  <p>Every tenant-owned row carries <code>tenant_id</code>. The application connects as <code>zsite_app</code>, which owns nothing and cannot bypass Row-Level Security. <code>withTenant(id, fn)</code> opens a transaction with <code>app.tenant_id</code> set, and every policy reads <code>tenant_id = app_tenant()</code>. A query that forgets its WHERE clause returns nothing rather than another business's rows.</p>
+  <p>The few lookups that must cross tenants return <b>ids only</b>, through <code>SECURITY DEFINER</code> functions: which site a Host names, which integration a webhook names, claiming outbox jobs. The internal dashboard's functions return metadata and totals, never trees, credentials or orders.</p>
+  <div class="note">Identity is global and membership is per tenant: one person, one login, several businesses. The same model Zuuvy's backend uses.</div>
+</section>
+
+<section id="hld-model">
+  <h2>A site is data, not code</h2>
+  <p>A site is a <b>tree</b>: meta, theme, nav, footer, and pages holding sections, where each section is one of 12 blocks with zod-validated props. It is changed only through <code>applyOps</code>: pure operations that validate the whole result or throw words the AI can act on. Beside the tree, each version holds its <b>data</b>: structured collections (profile, projects…) shown by <code>collection</code> sections.</p>
+  <p>This is what makes the product safe. An AI edit can never produce a broken page. Diffs are field-level. Templates are just trees. Versions are cheap and immutable. The brand kit can be enforced mechanically. And the whole site round-trips through source files and GitHub.</p>
+</section>
+
+<section id="hld-ai">
+  <h2>The AI agent</h2>
+  <p>The agent gets the tree, the data, the brand brief, the media library and any attachments. It works through provider-neutral <code>SiteTool</code>s, each of which validates its own input and returns errors to the model as text so it can correct itself. Bedrock's Converse API with Nova Pro is the default (AWS credits). Anthropic is a drop-in provider.</p>
+  <div class="table"><table>
+    <thead><tr><th>Tools</th><th>Rule</th></tr></thead>
+    <tbody>
+      <tr><td><code>view_site</code> <code>add_section</code> <code>update_section</code> <code>move_section</code> <code>add_page</code> <code>set_theme</code> <code>set_navigation</code> …</td><td>Each is one <code>applyOps</code> call. <code>set_theme</code> drops brand-fixed fields and says so.</td></tr>
+      <tr><td><code>view_data</code> <code>add_entry</code> <code>update_entry</code> <code>remove_entry</code> <code>move_entry</code></td><td>Additions and filling empty fields apply at once. Changing or removing existing entries becomes a <b>proposal</b>.</td></tr>
+      <tr><td><code>generate_image</code></td><td>Nova Canvas, 4 per request, palette appended, stored in S3 and recorded as an asset.</td></tr>
+      <tr><td><code>fetch_reference</code></td><td>A guarded fetch of a public page, reduced to headings, sections, colours and fonts. Up to 3 per request.</td></tr>
+    </tbody></table></div>
+  <p>The result is always a <b>new, unpublished version</b>. The brand kit is applied over it again as the guarantee, and every attempt, including failures, is written to <code>ai_usage</code>.</p>
+</section>
+
+<section id="hld-async">
+  <h2>Async work: the outbox</h2>
+  <p>Anything that calls the outside world or must survive a crash is an <code>outbox</code> row written <b>in the same transaction as its cause</b>. An order and "send it to Zuuvy" commit together or not at all. So do a version and "push it to GitHub", or an order and "email the owner". The worker claims due jobs (<code>claim_outbox</code>, <code>FOR UPDATE SKIP LOCKED</code>) and runs each inside the job's own tenant context, with backoff. A <code>PermanentError</code> parks the job as dead and runs its <code>onDead</code>.</p>
+  <p>Network calls never happen inside a database transaction. The AI agent in particular runs outside one, because it can take a minute.</p>
+</section>
+
+<section id="hld-aws">
+  <h2>AWS deployment</h2>
+  <p>Two CDK stacks, deployed by GitHub Actions over OIDC with no stored AWS keys: test → <code>ZsiteBase</code> → migrate (one-off ECS task, which also seeds the superadmin) → <code>ZsiteServices</code> → a smoke test that checks <code>/api/health</code> reports the commit.</p>
+  <div class="diagram">
+    <svg viewBox="0 0 980 300" role="img" aria-label="AWS: GitHub Actions deploys ZsiteBase (VPC, Aurora, secrets, S3 media, SES identity, ECS cluster, migrate task) then ZsiteServices (ALB with certificates, three Fargate services, IAM).">
+      <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ea"/></marker></defs>
+      <rect x="20" y="110" width="150" height="80" rx="10" class="n"/><text x="36" y="138" class="t">GitHub Actions</text><text x="36" y="158" class="s">OIDC → deploy role</text><text x="36" y="174" class="s">(assumes CDK roles)</text>
+      <rect x="210" y="20" width="360" height="260" rx="14" class="z"/><text x="224" y="42" class="zl">ZsiteBase · kept data</text>
+      <text x="226" y="72" class="t">VPC, 2 AZs, no NAT</text><text x="226" y="90" class="s">public subnets for tasks, isolated for the DB</text>
+      <text x="226" y="120" class="t">Aurora PostgreSQL 16 Serverless v2</text><text x="226" y="138" class="s">force_ssl · deletion protection · backups</text>
+      <text x="226" y="168" class="t">Secrets Manager · S3 media bucket</text><text x="226" y="186" class="s">generated names; t/* public-read, retained</text>
+      <text x="226" y="216" class="t">SES identity zuuvy.site</text><text x="226" y="234" class="s">DKIM + MAIL FROM (records printed for Hostinger)</text>
+      <text x="226" y="262" class="s">ECS cluster · migrate task definition</text>
+      <rect x="610" y="20" width="350" height="260" rx="14" class="z"/><text x="624" y="42" class="zl">ZsiteServices · stateless</text>
+      <text x="626" y="72" class="t">Application Load Balancer</text><text x="626" y="90" class="s">*.zuuvy.site cert + one per custom domain (SNI)</text>
+      <text x="626" y="120" class="t">Fargate: studio ×1 · renderer ×2–6 · worker ×1</text><text x="626" y="138" class="s">circuit-breaker rollback</text>
+      <text x="626" y="168" class="t">IAM per task</text><text x="626" y="186" class="s">Bedrock · S3 t/* · SES (2 senders)</text><text x="626" y="202" class="s">worker: ACM + listener certificates</text>
+      <text x="626" y="232" class="t">DNS at Hostinger</text><text x="626" y="250" class="s">studio, *, apex → ALB (no NS change)</text>
+      <path d="M170 150 H206" class="e" marker-end="url(#ar2)"/><path d="M570 150 H606" class="e" marker-end="url(#ar2)"/>
+    </svg>
+  </div>
+</section>
+
+<section id="lld-schema">
+  <p class="eyebrow">04 · Low-level design</p>
+  <h2>Schema</h2>
+  <p>Two migrations, applied by <code>migrate.ts</code> under an advisory lock, in order and once each. They are expand-only, so old and new containers run side by side during a deploy.</p>
+  <div class="table"><table>
+    <thead><tr><th>Table</th><th>Holds</th><th>App role may</th></tr></thead>
+    <tbody>
+      <tr><td><code>tenants</code></td><td>Business, plan, order sequence, <code>alerts</code> (order-alert emails)</td><td>read/update itself</td></tr>
+      <tr><td><code>users</code> · <code>memberships</code> · <code>sessions</code></td><td>Global identity; per-tenant role; hashed session tokens</td><td>read/write (not tenant-owned)</td></tr>
+      <tr><td><code>sites</code></td><td>Kind, subdomain, <code>published_version_id</code>, <code>brand</code>, <code>inventory</code>, export stamp</td><td>read/write</td></tr>
+      <tr><td><code>site_versions</code></td><td><code>tree</code> + <code>data</code> jsonb, source, prompt, summary, <code>ai_meta</code> (usage, proposals)</td><td><b>insert and read only</b></td></tr>
+      <tr><td><code>site_publications</code></td><td>Who published which version when, and what it replaced</td><td>read/write</td></tr>
+      <tr><td><code>site_domains</code></td><td>Hostname, status, certificate ARN, validation record, attached</td><td>read/write</td></tr>
+      <tr><td><code>site_git</code></td><td>owner/repo, default branch, sealed token, sync status</td><td>read/write</td></tr>
+      <tr><td><code>integrations</code> · <code>integration_events</code></td><td>Connector config + sealed credentials; append-only exchange log</td><td>events: insert/read</td></tr>
+      <tr><td><code>products</code> · <code>orders</code> · <code>order_events</code></td><td>Catalogue (native or zuuvy), COD orders, status history</td><td>events: insert/read</td></tr>
+      <tr><td><code>assets</code></td><td>Media library: storage key, public URL, kind, alt, prompt</td><td>read/write</td></tr>
+      <tr><td><code>ai_usage</code></td><td>One row per AI attempt: tokens, pictures, outcome, error</td><td><b>insert and read only</b></td></tr>
+      <tr><td><code>outbox</code></td><td>Jobs: topic, payload, status, attempts, run_after</td><td>read/write</td></tr>
+      <tr><td><code>platform_admins</code></td><td>user_id, role (superadmin | admin)</td><td><b>read only</b>; writes via <code>grant_/revoke_platform_admin</code></td></tr>
+    </tbody></table></div>
+</section>
+
+<section id="lld-ai">
+  <h2>Flow: "describe a change"</h2>
+  <ol class="flow">
+    <li><span class="who">studio action</span><span class="what"><code>generateAction</code>: session check, reads prompt, reference links (added to the prompt) and files → <code>toAttachments</code> (extension + magic-byte check, ≤5 × 4.5 MB).</span></li>
+    <li><span class="who">platform</span><span class="what"><code>generateVersion</code> loads the base version (tree + data), brand, catalogue categories and media library in one <code>withTenant</code>, then closes the transaction.</span></li>
+    <li><span class="who">platform</span><span class="what">Builds capabilities: <code>lockedTheme</code> from the brand, the image palette, <code>generateImage</code> (if S3 is configured), <code>fetchReference</code>.</span></li>
+    <li><span class="who">ai · agent</span><span class="what"><code>editSite</code> composes the system prompt (block + collection schemas) and the user message (facts, brand brief, media, tree, data, request). Attachments ride as Converse document/image blocks.</span></li>
+    <li><span class="who">ai · provider</span><span class="what">Converse loop: the model calls tools, and each runs <code>applyOps</code> / <code>applyDataOps</code> or records a proposal. Tool errors go back as text. It stops on final text or after 30 iterations.</span></li>
+    <li><span class="who">platform</span><span class="what"><code>applyBrand</code> over the result. One transaction writes the version (tree, data, <code>ai_meta.proposals</code>), records the AI's colour choices, inserts <code>ai_usage</code>, and queues <code>git.push</code> if GitHub is linked.</span></li>
+    <li><span class="who">on failure</span><span class="what">The <code>AgentError</code> carries the tokens already spent → an <code>ai_usage</code> row with outcome <code>error</code> / <code>no_change</code> / <code>refused</code>, and the message is shown on the form.</span></li>
+    <li><span class="who">owner, later</span><span class="what">On the version page: allow proposals → <code>applyProposals</code> applies them to the <i>latest</i> data as a new version.</span></li>
+  </ol>
+</section>
+
+<section id="lld-publish">
+  <h2>Flow: publish, rollback and GitHub</h2>
+  <ol class="flow">
+    <li><span class="who">publishVersion</span><span class="what">Row-locks the site, moves <code>published_version_id</code>, appends <code>site_publications</code>, queues <code>git.merge</code> if linked. Rolling back is the same call with an older version.</span></li>
+    <li><span class="who">renderer</span><span class="what">The next request resolves Host → site (definer function, www/bare twin for custom domains) and renders the published tree + data.</span></li>
+    <li><span class="who">git.push</span><span class="what"><code>treeToSource</code> → Git Data API: a tree on top of main (other repo files kept, stale page and data files removed) → commit → branch <code>zuuvy/v&lt;n&gt;</code>.</span></li>
+    <li><span class="who">git.merge</span><span class="what">A commit whose tree is the published version, with parents [main, zuuvy/v&lt;n&gt;] → fast-forward main. A rollback therefore really rolls main back.</span></li>
+    <li><span class="who">import branch</span><span class="what">Reads <code>zuuvy-site.json</code> + <code>site/**</code> from any branch → <code>sourceToTree</code> (full validation, file-level errors) → new version.</span></li>
+  </ol>
+</section>
+
+<section id="lld-order">
+  <h2>Flow: an order</h2>
+  <ol class="flow">
+    <li><span class="who">renderer</span><span class="what">COD form → <code>placeOrder</code>: checks the site is a store and each product's source matches its inventory mode. Stock is checked unless the mode is <code>none</code>.</span></li>
+    <li><span class="who">same transaction</span><span class="what">The order and its first event, plus <code>order.push</code> (Zuuvy lines) and one <code>email.send</code> per alert recipient (from alerts@).</span></li>
+    <li><span class="who">Zuuvy mode</span><span class="what">The worker posts the order. Zuuvy confirms (stock reserved there) and sends signed webhooks. <code>applyOrderStatus</code> only moves forward and is idempotent by delivery id.</span></li>
+    <li><span class="who">studio mode</span><span class="what">The owner accepts: <code>advanceOrder</code> takes stock with a conditional update (<code>stock &gt;= qty</code>), so two acceptances cannot sell the last unit twice. Cancelling an accepted order returns the stock.</span></li>
+    <li><span class="who">customer</span><span class="what">A tracking page by unguessable token (<code>/order/&lt;token&gt;</code>).</span></li>
+  </ol>
+</section>
+
+<section id="lld-domain">
+  <h2>Flow: a custom domain</h2>
+  <ol class="flow">
+    <li><span class="who">addDomain</span><span class="what">Normalise (punycode, no IPs or wildcards, not under zuuvy.site). Uniqueness via <code>domain_taken</code>. Insert as pending and queue <code>domain.provision</code>.</span></li>
+    <li><span class="who">provision</span><span class="what">ACM <code>RequestCertificate</code> (DNS validation, idempotency token = domain id), then wait until the validation record exists and save it. The studio shows both CNAMEs.</span></li>
+    <li><span class="who">check (repeating)</span><span class="what">Certificate ISSUED → <code>AddListenerCertificates</code>. DNS is checked via public resolvers: CNAME → domains.zuuvy.site, or matching A records. Checks run every 1 min, then every 5 min, then every 30 min, for 72 h.</span></li>
+    <li><span class="who">active</span><span class="what">Status active → the renderer serves it, and an email goes from no-reply@ to whoever added it.</span></li>
+    <li><span class="who">remove</span><span class="what">Delete the row and queue <code>domain.release</code>: detach from the listener, delete the certificate (retried while it is still in use).</span></li>
+  </ol>
+</section>
+
+<section id="lld-delete">
+  <h2>Flow: export, delete, import</h2>
+  <ol class="flow">
+    <li><span class="who">export</span><span class="what">A zip with the manifest (site, brand, versions index, publications, domains, orders + events), <code>versions/NNNN.json</code> + <code>.data.json</code>, <code>current/</code> as source, and <code>assets/</code> bytes from S3. It stamps <code>exported_at</code> and <code>exported_seq</code>.</span></li>
+    <li><span class="who">delete</span><span class="what">Refused unless the export holds every version (<code>exported_seq = version_seq</code>), is under 24 h old, and the typed name matches. Certificates are released and the site row deleted. Versions and domains cascade, orders keep their rows with <code>site_id</code> set to null, and media stays.</span></li>
+    <li><span class="who">import</span><span class="what">Zip-bomb-guarded unzip, validate every version, re-store pictures for the new tenant and rewrite their URLs, recreate the versions in order, publish the one that was live.</span></li>
+  </ol>
+</section>
+
+<section id="lld-security">
+  <h2>Security decisions</h2>
+  <div class="table"><table>
+    <thead><tr><th>Concern</th><th>Decision</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>Cross-tenant reads</td><td>RLS on every tenant table. The app role cannot bypass it. Definer functions return ids only.</td><td><code>db/migrations</code></td></tr>
+      <tr><td>Script in pages</td><td>Links and images are validated in the schema (<code>Href</code>, <code>ImageUrl</code>: no <code>javascript:</code>). The runtime never builds HTML strings. SVG uploads are refused.</td><td><code>core/tree.ts</code>, <code>media.ts</code></td></tr>
+      <tr><td>SSRF</td><td>Reference fetch: http(s) on ports 80/443, every resolved address checked, DNS pinned into the socket, redirects re-checked, HTML only, 1.5 MB, 10 s. The Zuuvy and GitHub hosts are fixed.</td><td><code>references.ts</code></td></tr>
+      <tr><td>Credentials</td><td>AES-256-GCM sealed (integrations, GitHub tokens). Sessions stored as hashes. scrypt passwords.</td><td><code>secrets.ts</code>, <code>auth.ts</code></td></tr>
+      <tr><td>Webhooks</td><td>HMAC signature with timestamp, delivery-id dedupe, forward-only status.</td><td><code>webhooks.ts</code></td></tr>
+      <tr><td>Privilege</td><td>Platform admins are rows the app cannot write. Grants go through definer functions that check the caller is a superadmin. The last superadmin cannot be removed.</td><td><code>0002</code>, <code>admin.ts</code></td></tr>
+      <tr><td>AWS</td><td>OIDC deploy role pinned to the repo's id-based subject. Task roles are least-privilege: SES limited to two From addresses, S3 to <code>t/*</code>, the listener by ARN.</td><td><code>infra/</code></td></tr>
+    </tbody></table></div>
+</section>
+
+<section id="code-map">
+  <p class="eyebrow">05 · Code walkthrough</p>
+  <h2>Repository map</h2>
+  <pre class="tree"><span class="d">apps/</span>
+  <span class="d">studio/</span>            <span class="x">dashboard · server actions · preview · export routes · /admin</span>
+  <span class="d">renderer/</span>          <span class="x">live sites · proxy.ts · product &amp; order pages</span>
+<span class="d">packages/</span>
+  <span class="d">core/</span>              <span class="x">tree.ts · ops.ts · data.ts · brand.ts · source.ts · diff.ts · templates/</span>
+  <span class="d">runtime/</span>           <span class="x">SiteRenderer.tsx · blocks.tsx · theme.ts · styles.css (motion)</span>
+  <span class="d">ai/</span>                <span class="x">agent.ts · tools.ts · providers/{bedrock,anthropic}.ts</span>
+  <span class="d">connectors/</span>        <span class="x">zuuvy/{contract,connector,signature,mock-server}.ts</span>
+  <span class="d">platform/</span>          <span class="x">db · sites · ai-versions · orders · inventory · domains · git · archive · media · email · admin · outbox · jobs</span>
+<span class="d">db/migrations/</span>       <span class="x">0001_init.sql · 0002_usage_media_domains.sql</span>
+<span class="d">infra/</span>               <span class="x">CDK: base-stack.ts · services-stack.ts · docker/ · bootstrap/github-oidc.yaml</span>
+<span class="d">scripts/</span>             <span class="x">worker · migrate · seed · create-superadmin · deploy-migrate · mock-zuuvy</span>
+<span class="d">brand/</span>               <span class="x">Zuuvy Studio mark, lockups, guideline</span>
+<span class="d">.github/workflows/</span>   <span class="x">deploy.yml</span></pre>
+  <p>Dependencies point one way: <code>core</code> ← <code>runtime</code>, <code>ai</code>, <code>connectors</code> ← <code>platform</code> ← apps. <code>core</code> and <code>runtime</code> have no I/O. <code>ai</code> and <code>connectors</code> never touch the database.</p>
+</section>
+
+<section id="code-read">
+  <h2>Read in this order</h2>
+  <ol class="read">
+    <li><div><b>packages/core/src/tree.ts</b><br>The site schema. The <code>.describe()</code> texts are what the AI reads about each block.</div></li>
+    <li><div><b>packages/core/src/ops.ts</b><br><code>applyOps</code>: the only way a tree changes. Pure, all-or-nothing, errors written for a model.</div></li>
+    <li><div><b>packages/core/src/data.ts</b> and <b>brand.ts</b><br>Collections, <code>overwrites()</code> (what needs permission), <code>applyBrand</code>.</div></li>
+    <li><div><b>packages/platform/src/db.ts</b><br><code>withTenant</code> / <code>withGlobal</code>: how RLS is engaged. Read it with the policies at the bottom of <code>0001_init.sql</code>.</div></li>
+    <li><div><b>packages/platform/src/sites.ts</b><br>Versions: create (data carried forward, git queued), publish, restore with a table picker.</div></li>
+    <li><div><b>packages/ai/src/tools.ts → agent.ts → providers/bedrock.ts</b><br>Tools, the prompt, and the Converse loop.</div></li>
+    <li><div><b>packages/platform/src/ai-versions.ts</b><br>Where brand, media, capabilities, usage and proposals meet.</div></li>
+    <li><div><b>packages/platform/src/outbox.ts + jobs.ts</b><br>Background work, then any handler: <code>orders.pushOrder</code>, <code>domains.checkDomain</code>, <code>git.mergeVersion</code>.</div></li>
+    <li><div><b>apps/studio/app/(dash)/sites/actions.ts</b><br>Every site mutation the UI offers, each starting with <code>requireSession()</code>.</div></li>
+    <li><div><b>infra/lib/*.ts + .github/workflows/deploy.yml</b><br>What runs where, and how it gets there.</div></li>
+  </ol>
+</section>
+
+<section id="code-snippets">
+  <h2>Key code</h2>
+  <h3>RLS is engaged per transaction</h3>
+  <pre><code><span class="c">// packages/platform/src/db.ts</span>
+<span class="k">async function</span> transaction(tenantId, fn) {
+  <span class="k">const</span> client = <span class="k">await</span> pool().connect();          <span class="c">// as zsite_app: no BYPASSRLS</span>
+  <span class="k">await</span> client.query(<span class="s">"begin"</span>);
+  <span class="k">if</span> (tenantId) <span class="k">await</span> client.query(<span class="s">"select set_config('app.tenant_id', $1, true)"</span>, [tenantId]);
+  <span class="k">const</span> result = <span class="k">await</span> fn(wrap(client, tenantId));
+  <span class="k">await</span> client.query(<span class="s">"commit"</span>);
+  <span class="k">return</span> result;
+}
+<span class="c">-- 0001_init.sql, for every tenant table:</span>
+<span class="c">create policy tenant_isolation on sites using (tenant_id = app_tenant()) with check (tenant_id = app_tenant());</span></code></pre>
+
+  <h3>A tool is one validated operation</h3>
+  <pre><code><span class="c">// packages/ai/src/tools.ts</span>
+siteTool({
+  name: <span class="s">"update_entry"</span>,
+  inputSchema: z.object({ collection, id: z.string().optional(), fields: z.record(z.string(), z.unknown()) }),
+  run: (i) =&gt; dataOp({ op: <span class="s">"updateItem"</span>, collection: i.collection, id: i.id, fields: i.fields }),
+});
+<span class="k">const</span> dataOp = (op) =&gt; {
+  <span class="k">if</span> (overwrites(state.data, op) &amp;&amp; !allowed.has(op.collection)) {
+    applyDataOps(state.data, [op]);                      <span class="c">// validate now: a proposal is always applicable</span>
+    state.proposals.push({ op, description: describeDataOp(state.data, op) });
+    <span class="k">return</span> JSON.stringify({ ok: <span class="k">true</span>, proposed: <span class="k">true</span>, note: <span class="s">"… the owner will be asked first."</span> });
+  }
+  state.data = applyDataOps(state.data, [op]);
+  …
+};</code></pre>
+
+  <h3>The brand is a guarantee, not a request</h3>
+  <pre><code><span class="c">// packages/platform/src/ai-versions.ts</span>
+result = <span class="k">await</span> editor({ tree: base.tree, data: base.data, brand: brandBrief(brand), capabilities, attachments, … });
+<span class="k">const</span> tree = applyBrand(result.tree, brand);           <span class="c">// whatever the model did, fixed values win</span>
+<span class="k">await</span> withTenant(tenantId, <span class="k">async</span> (tx) =&gt; {
+  <span class="k">const</span> v = <span class="k">await</span> createVersion(tx, siteId, { tree, data: result.data, source: <span class="s">"ai"</span>, aiMeta: { usage, proposals }, … });
+  <span class="k">await</span> recordUsage(tx, { versionId: v.id, outcome: <span class="s">"version"</span>, … });
+});</code></pre>
+
+  <h3>Work that must happen commits with its cause</h3>
+  <pre><code><span class="c">// packages/platform/src/sites.ts: in createVersion's transaction</span>
+<span class="k">await</span> tx.query(
+  <span class="s">`insert into outbox (tenant_id, topic, payload)
+   select app_tenant(), $2::text, jsonb_build_object('siteId', ($1::uuid)::text, 'versionId', ($3::uuid)::text)
+    where exists (select 1 from site_git where site_id = $1::uuid)`</span>,
+  [siteId, <span class="s">"git.push"</span>, created.id],
+);</code></pre>
+
+  <h3>Stock cannot be sold twice</h3>
+  <pre><code><span class="c">// packages/platform/src/inventory.ts: advanceOrder, accepting</span>
+<span class="k">const</span> taken = <span class="k">await</span> tx.one(
+  <span class="s">`update products set stock = stock - $2, in_stock = (stock - $2) &gt; 0
+    where id = $1 and (stock is null or stock &gt;= $2) returning id`</span>, [l.productId, l.quantity]);
+<span class="k">if</span> (!taken) <span class="k">throw new</span> UserError(<span class="s">`Not enough ${l.name} in stock to accept this order.`</span>);</code></pre>
+
+  <h3>The fetcher connects to the address it checked</h3>
+  <pre><code><span class="c">// packages/platform/src/references.ts</span>
+https.get(url, { lookup: safeLookup, timeout: 10_000 }, …);   <span class="c">// safeLookup refuses any private/metadata address</span>
+<span class="k">if</span> (res.location) url = checkReferenceUrl(<span class="k">new</span> URL(res.location, url).href);  <span class="c">// each redirect re-checked</span></code></pre>
+</section>
+
+<section id="code-run">
+  <h2>Run, test, ship</h2>
+  <pre><code>nvm use 22                         <span class="c"># Node ≥ 22.12</span>
+npm install
+npm run db:start &amp;&amp; npm run db:migrate &amp;&amp; npm run db:seed    <span class="c"># demo@zuuvy.site / demo12345</span>
+npm run dev                        <span class="c"># studio :3000 · renderer :3001 (&lt;sub&gt;.localhost) · worker · mock Zuuvy :4010</span>
+npm test                           <span class="c"># 81 tests; platform tests make a throwaway DB per file, as zsite_app</span>
+npm run typecheck &amp;&amp; npm run build
+npm run admin:create               <span class="c"># platform superadmin (rishav@zuuvy.in)</span></code></pre>
+  <p><b>Shipping.</b> Merge to <code>main</code>. The workflow tests, synthesises and deploys both stacks, runs migrations in a one-off task, and smoke-tests the new build through the load balancer. Pull requests run tests and <code>cdk synth</code> only. Setup and one-time steps (SES records, Bedrock quotas, the superadmin password) are in <code>docs/DEPLOYMENT.md</code>.</p>
+  <div class="note warn">Before changing anything structural, read <code>CLAUDE.md</code> ("Things that will bite you") and <code>docs/ARCHITECTURE.md</code>. Before touching the Zuuvy connector, read <code>docs/ZUUVY_CONTRACT.md</code>.</div>
+</section>
+</main>
+</div>
+</body>
+</html>
