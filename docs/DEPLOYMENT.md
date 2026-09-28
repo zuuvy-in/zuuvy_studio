@@ -59,9 +59,9 @@ Secrets Manager and inject it in `infra/lib/services-stack.ts` — not in GitHub
    resolves through this zone.
 2. **Deploy role.** CloudFormation → Create stack → Upload
    `infra/bootstrap/github-oidc.yaml` → stack name `zsite-github`. Keep the
-   defaults (org `zuuvy-in`, repo `zuuvy_ai_site`, environment `production`,
+   defaults (org `zuuvy-in`, repo `zuuvy_studio`, environment `production`,
    and the organisation's and repository's numeric ids — this organisation
-   sends GitHub's ID-pinned subject, `repo:zuuvy-in@309228253/zuuvy_ai_site@1390232775:…`);
+   sends GitHub's ID-pinned subject, `repo:zuuvy-in@309228253/zuuvy_studio@1390232775:…`);
    set `CreateOidcProvider` to `false` only if IAM → Identity providers
    already lists `token.actions.githubusercontent.com`. Copy the
    **DeployRoleArn** output → `AWS_DEPLOY_ROLE_ARN`.

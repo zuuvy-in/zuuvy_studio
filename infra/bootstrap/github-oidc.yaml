@@ -11,7 +11,7 @@ Parameters:
     Default: zuuvy-in
   RepoName:
     Type: String
-    Default: zuuvy_ai_site
+    Default: zuuvy_studio
   EnvironmentName:
     Type: String
     Default: production
@@ -57,7 +57,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       RoleName: zsite-github-deploy
-      Description: Assumed by GitHub Actions (zuuvy_ai_site, production environment) to deploy Zuuvy Sites.
+      Description: Assumed by GitHub Actions (zuuvy_studio, production environment) to deploy Zuuvy Sites.
       MaxSessionDuration: 7200
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
