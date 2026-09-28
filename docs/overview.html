@@ -135,7 +135,7 @@ td code{white-space:nowrap}
     <span class="fact"><b>PostgreSQL 16</b> · Row-Level Security</span>
     <span class="fact"><b>Amazon Bedrock</b> · Nova Pro / Canvas</span>
     <span class="fact"><b>AWS CDK</b> · ap-south-1</span>
-    <span class="fact"><b>81 tests</b> · vitest</span>
+    <span class="fact"><b>71 tests</b> · vitest</span>
   </div>
 </header>
 
@@ -464,7 +464,7 @@ https.get(url, { lookup: safeLookup, timeout: 10_000 }, …);   <span class="c">
 npm install
 npm run db:start &amp;&amp; npm run db:migrate &amp;&amp; npm run db:seed    <span class="c"># demo@zuuvy.site / demo12345</span>
 npm run dev                        <span class="c"># studio :3000 · renderer :3001 (&lt;sub&gt;.localhost) · worker · mock Zuuvy :4010</span>
-npm test                           <span class="c"># 81 tests; platform tests make a throwaway DB per file, as zsite_app</span>
+npm test                           <span class="c"># 71 tests; platform tests make a throwaway DB per file, as zsite_app</span>
 npm run typecheck &amp;&amp; npm run build
 npm run admin:create               <span class="c"># platform superadmin (rishav@zuuvy.in)</span></code></pre>
   <p><b>Shipping.</b> Merge to <code>main</code>. The workflow tests, synthesises and deploys both stacks, runs migrations in a one-off task, and smoke-tests the new build through the load balancer. Pull requests run tests and <code>cdk synth</code> only. Setup and one-time steps (SES records, Bedrock quotas, the superadmin password) are in <code>docs/DEPLOYMENT.md</code>.</p>
