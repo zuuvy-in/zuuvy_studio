@@ -17,7 +17,9 @@ export function proxy(request: NextRequest) {
   if (site === null) return NextResponse.next();
   const url = request.nextUrl.clone();
   url.searchParams.delete("site");
-  const res = NextResponse.redirect(url, 303);
+  // Relative, for the same reason as the studio's logout: behind the balancer the
+  // request's own host is the container's, not the one the visitor typed.
+  const res = new NextResponse(null, { status: 303, headers: { Location: `${url.pathname}${url.search}` } });
   if (/^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/.test(site)) {
     res.cookies.set(SITE_COOKIE, site, {
       httpOnly: true,
