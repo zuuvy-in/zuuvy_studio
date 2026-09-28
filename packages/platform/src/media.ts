@@ -4,7 +4,12 @@
  * public object; the AI is told what is in the library so it places the
  * business's own photos before generating anything.
  */
-import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import {
+  BedrockRuntimeClient,
+  ConverseCommand,
+  type ConverseCommandOutput,
+  InvokeModelCommand,
+} from "@aws-sdk/client-bedrock-runtime";
 import type { GeneratedImage, ImageAspect, ImageStyle } from "@zsite/ai";
 import { loadRootEnv } from "./config";
 import { type Tx, UserError, withTenant } from "./db";
@@ -121,24 +126,109 @@ export type ImageModel = { model: string; region: string };
 export function imageModel(): ImageModel {
   loadRootEnv();
   return {
-    // Nova Canvas is not served in Mumbai; us-east-1 is the default home for it.
-    // amazon.titan-image-generator-v1 in ap-south-1 takes the same request body.
-    model: process.env.ZSITE_IMAGE_MODEL || "amazon.nova-canvas-v1:0",
-    region: process.env.ZSITE_IMAGE_REGION || "us-east-1",
+    // Nova 2 Omni generates images through Converse and is reached from Mumbai by
+    // its global inference profile. Nova Canvas (amazon.nova-canvas-v1:0, us-east-1)
+    // still works for accounts that used it recently; AWS marks it Legacy.
+    model: process.env.ZSITE_IMAGE_MODEL || "global.amazon.nova-2-omni-v1:0",
+    region: process.env.ZSITE_IMAGE_REGION || process.env.AWS_REGION || "ap-south-1",
   };
 }
 
+/** Canvas and Titan take one JSON request body; everything else speaks Converse. */
+export function imageApi(model: string): "invoke" | "converse" {
+  return /nova-canvas|titan-image/.test(model) ? "invoke" : "converse";
+}
+
 /** Anything with the client's `send`: the real Bedrock client, or a fake in tests. */
-export type ImageSender = { send(command: InvokeModelCommand): Promise<{ body?: Uint8Array }> };
+export type ImageSender = { send(command: InvokeModelCommand | ConverseCommand): Promise<unknown> };
+
+const ASPECT_WORDS: Record<ImageAspect, string> = {
+  wide: "a wide 16:9 landscape image",
+  landscape: "a 4:3 landscape image",
+  square: "a square 1:1 image",
+  portrait: "a 3:4 portrait image",
+};
+
+/** Pixel size from the file itself (PNG IHDR, or a JPEG SOF marker). */
+export function imageSize(b: Uint8Array): { width: number; height: number } | null {
+  if (b[0] === 0x89 && b[1] === 0x50 && b.length > 24) {
+    const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    return { width: v.getUint32(16), height: v.getUint32(20) };
+  }
+  if (b[0] === 0xff && b[1] === 0xd8) {
+    for (let i = 2; i + 9 < b.length; ) {
+      if (b[i] !== 0xff) return null;
+      const marker = b[i + 1]!;
+      const len = (b[i + 2]! << 8) | b[i + 3]!;
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { height: (b[i + 5]! << 8) | b[i + 6]!, width: (b[i + 7]! << 8) | b[i + 8]! };
+      }
+      i += 2 + len;
+    }
+  }
+  return null;
+}
+
+function explainImageError(e: unknown, model: string, region: string): never {
+  const err = e as Error & { name?: string };
+  if (/legacy/i.test(err.message)) {
+    throw new UserError(`${model} is a legacy model this account cannot use. Set ZSITE_IMAGE_MODEL to global.amazon.nova-2-omni-v1:0 (the default).`);
+  }
+  if ((err.name === "ValidationException" && /operation not allowed/i.test(err.message)) || err.name === "AccessDeniedException") {
+    throw new UserError(`AWS has not allowed this account to use ${model} from ${region} yet — check its quota in the Bedrock console (${region}).`);
+  }
+  if (err.name === "ValidationException" && /blocked|filter|content/i.test(err.message)) {
+    throw new UserError("The picture request was blocked by the image model's content filter. Describe it differently.");
+  }
+  if (err.name === "ThrottlingException" || err.name === "ServiceQuotaExceededException") {
+    throw new UserError("The image model is busy or over its quota. Try again in a minute.");
+  }
+  throw new UserError(`Could not create the picture (${err.name ?? "error"}: ${err.message}).`);
+}
 
 export async function renderImage(
   req: { prompt: string; aspect: ImageAspect; style: ImageStyle },
   opts: { client?: ImageSender; model?: ImageModel } = {},
-): Promise<{ bytes: Uint8Array; width: number; height: number }> {
+): Promise<{ bytes: Uint8Array; width: number; height: number; contentType: string; ext: string }> {
   const { model, region } = opts.model ?? imageModel();
   const size = ASPECT_SIZES[req.aspect];
   const client = opts.client ?? new BedrockRuntimeClient({ region });
   const text = `${req.prompt.trim()}. ${STYLE_HINTS[req.style]}`.slice(0, 1000);
+
+  if (imageApi(model) === "converse") {
+    let res: ConverseCommandOutput;
+    try {
+      res = (await client.send(
+        new ConverseCommand({
+          modelId: model,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  text: `Generate ${ASPECT_WORDS[req.aspect]}: ${text}. No text, letters, logos or watermarks in the image. Reply with the image only.`,
+                },
+              ],
+            },
+          ],
+        }),
+      )) as ConverseCommandOutput;
+    } catch (e) {
+      explainImageError(e, model, region);
+    }
+    const block = res.output?.message?.content?.find((c) => "image" in c && c.image)?.image;
+    const bytes = block?.source && "bytes" in block.source ? block.source.bytes : undefined;
+    if (!bytes?.length) {
+      if (res.stopReason === "content_filtered" || res.stopReason === "guardrail_intervened") {
+        throw new UserError("The picture request was blocked by the image model's content filter. Describe it differently.");
+      }
+      throw new UserError(`${model} answered without a picture. Try describing it differently.`);
+    }
+    const format = (block?.format ?? "png") as string;
+    const dims = imageSize(bytes) ?? size;
+    return { bytes, ...dims, contentType: `image/${format === "jpg" ? "jpeg" : format}`, ext: format === "jpeg" ? "jpg" : format };
+  }
+
   const body = {
     taskType: "TEXT_IMAGE",
     textToImageParams: { text, negativeText: NEGATIVE },
@@ -146,25 +236,15 @@ export async function renderImage(
   };
   let res: { body?: Uint8Array };
   try {
-    res = await client.send(
+    res = (await client.send(
       new InvokeModelCommand({ modelId: model, contentType: "application/json", accept: "application/json", body: JSON.stringify(body) }),
-    );
+    )) as { body?: Uint8Array };
   } catch (e) {
-    const err = e as Error & { name?: string };
-    if (err.name === "ValidationException" && /operation not allowed/i.test(err.message)) {
-      throw new UserError(`AWS has not allowed this account to use ${model} in ${region} yet — request a quota for it in the Bedrock console (${region}).`);
-    }
-    if (err.name === "ValidationException" && /blocked|filter|content/i.test(err.message)) {
-      throw new UserError("The picture request was blocked by the image model's content filter. Describe it differently.");
-    }
-    if (err.name === "ThrottlingException" || err.name === "ServiceQuotaExceededException") {
-      throw new UserError("The image model is busy or over its quota. Try again in a minute.");
-    }
-    throw new UserError(`Could not create the picture (${err.name ?? "error"}: ${err.message}).`);
+    explainImageError(e, model, region);
   }
   const parsed = JSON.parse(new TextDecoder().decode(res.body)) as { images?: string[]; error?: string };
   if (parsed.error || !parsed.images?.[0]) throw new UserError(`The image model returned no picture${parsed.error ? `: ${parsed.error}` : ""}.`);
-  return { bytes: Buffer.from(parsed.images[0], "base64"), ...size };
+  return { bytes: Buffer.from(parsed.images[0], "base64"), ...size, contentType: "image/png", ext: "png" };
 }
 
 /**
@@ -178,13 +258,13 @@ export async function generateAsset(
 ): Promise<Asset> {
   const store = requireStorage();
   const image = await renderImage(req, opts);
-  const key = objectKey(tenantId, "png");
-  const url = await store.put(key, image.bytes, "image/png");
+  const key = objectKey(tenantId, image.ext);
+  const url = await store.put(key, image.bytes, image.contentType);
   return withTenant(tenantId, (tx) =>
     tx.get<Asset>(
       `insert into assets (tenant_id, site_id, storage_key, url, kind, content_type, bytes, width, height, alt, prompt, created_by)
-       values (app_tenant(), $1, $2, $3, 'generated', 'image/png', $4, $5, $6, $7, $8, $9) returning ${COLUMNS}`,
-      [req.siteId ?? null, key, url, image.bytes.length, image.width, image.height, req.prompt.slice(0, 300), req.prompt.slice(0, 1000), req.userId],
+       values (app_tenant(), $1, $2, $3, 'generated', $10, $4, $5, $6, $7, $8, $9) returning ${COLUMNS}`,
+      [req.siteId ?? null, key, url, image.bytes.length, image.width, image.height, req.prompt.slice(0, 300), req.prompt.slice(0, 1000), req.userId, image.contentType],
     ),
   );
 }

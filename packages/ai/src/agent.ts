@@ -81,7 +81,7 @@ How a site is built:
 - Product grids fill themselves from the connected catalogue. Never type products, prices or stock into other blocks; to feature a category, set a productGrid's \`category\` to one of the catalogue's categories exactly as given.
 - Links are "/path", "/#section-id", https://, mailto: or tel:. Anchor links point at section ids.
 - Images must be https URLs: ones the user gave you, ones from the media library listed with the request, or ones generate_image returned. Prefer the business's own uploaded pictures for its products, premises and people. If generate_image is available and the request asks for pictures, illustrations or a more visual site, generate them; otherwise leave image fields out and the site shows a tasteful placeholder. Never invent an image URL. If generate_image fails, do not retry it: make every other change the request asks for, leave those image fields empty, and mention it in your summary. A failed picture is never a reason to change nothing.
-- Structured content lives in data collections (profile, projects, experience, education, skills, services, testimonials, awards, publications, clients, gallery), not in section props. A "collection" section shows one of them. Portfolios in particular should be built this way: put the facts in the data, then show them with collection sections. Use the data tools (view_data, add_entry, update_entry, remove_entry, move_entry).
+- Portfolio sites keep structured content in data collections (profile, projects, experience, education, skills, services, testimonials, awards, publications, clients, gallery), not in section props; a "collection" section shows one of them. Only use collections when the request's facts say "Data collections: available". Portfolios should be built this way: put the facts in the data, then show them with collection sections. Use the data tools (view_data, add_entry, update_entry, remove_entry, move_entry).
 - The owner's data is theirs. Adding entries and filling empty fields is fine. Changing a value that is already there, removing an entry, or replacing the profile is held for the owner's permission automatically — do not try to get round it; say in your summary what you proposed. Never invent facts for the data (employers, clients, dates, awards, quotes); use what the owner gave you, attached files included.
 - Motion is a theme setting (set_theme motion: none, subtle or lively). Use it when the request asks for animation or a livelier feel.
 - When the request names a website as a reference and fetch_reference is available, look at it first, then build in that spirit for this business: its structure, tone and palette, never its words, images or name.
@@ -128,7 +128,10 @@ export async function editSite(opts: EditOptions): Promise<EditResult> {
   const provider = opts.provider ?? resolveProvider(process.env.ZSITE_AI_PROVIDER);
   const model = opts.model || DEFAULT_MODELS[provider];
   const run = opts.runner ?? (provider === "anthropic" ? anthropicProvider() : bedrockProvider(opts.bedrock));
-  const { tools, state } = createSiteTools(opts.tree, opts.capabilities, opts.data ?? {});
+  // Collections belong to portfolios (and to any site already showing one, so its data is not stranded).
+  const usesCollections = opts.tree.pages.some((p) => p.sections.some((s) => s.type === "collection"));
+  const dataTools = opts.context.siteKind === "portfolio" || usesCollections;
+  const { tools, state } = createSiteTools(opts.tree, { ...opts.capabilities, dataTools }, opts.data ?? {});
   const ctx = opts.context;
 
   const facts = [
@@ -142,6 +145,9 @@ export async function editSite(opts: EditOptions): Promise<EditResult> {
     ctx.media?.length
       ? `Media library (use these URLs as they are):\n${ctx.media.map((m) => `- ${m.url} — ${m.alt || "(no description)"} [${m.kind}]`).join("\n")}`
       : "Media library: empty.",
+    dataTools
+      ? "Data collections: available (portfolio content lives there)."
+      : "Data collections: not used on this kind of site — build with ordinary blocks, never collection sections.",
     opts.brand ? `Brand kit:\n${opts.brand}` : "Brand kit: none — choose colours, fonts and imagery that fit the business.",
     opts.attachments?.length
       ? `Attached files (read them; they are the owner's material — use their facts, products, wording and look where the request asks): ${opts.attachments.map((a) => a.name).join(", ")}`
@@ -159,8 +165,7 @@ ${outline(opts.tree)}
 Current site tree:
 ${JSON.stringify(opts.tree)}
 
-Current data collections:
-${JSON.stringify(opts.data ?? {})}
+${dataTools ? `Current data collections:\n${JSON.stringify(opts.data ?? {})}` : ""}
 
 Request:
 ${opts.prompt}`;

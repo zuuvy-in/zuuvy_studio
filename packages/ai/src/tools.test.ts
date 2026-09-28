@@ -121,3 +121,12 @@ describe("when picture generation is refused", () => {
     expect(stripReasoning("Done. <thinking>unfinished")).toBe("Done.");
   });
 });
+
+describe("collections are for portfolios", () => {
+  it("offers no data tools and refuses collection sections when the site does not use them", async () => {
+    const { tools } = createSiteTools(tree(), { dataTools: false });
+    expect(tools.map((t) => t.name)).not.toContain("add_entry");
+    expect(() => tool(tools, "add_section").run({ page: "/", type: "collection", props: { collection: "projects" } })).toThrow(/portfolio sites/);
+    expect(createSiteTools(tree()).tools.map((t) => t.name)).toContain("add_entry");
+  });
+});

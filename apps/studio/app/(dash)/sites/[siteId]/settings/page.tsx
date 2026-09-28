@@ -1,6 +1,7 @@
 import { COLOR_KEYS, FONTS, MOTIONS } from "@zsite/core";
 import {
   CURRENT_RUNTIME,
+  config,
   EXPORT_FRESH_HOURS,
   MAX_DOMAINS_PER_SITE,
   deletionCheck,
@@ -9,6 +10,8 @@ import {
   getGitLink,
   getSite,
   isApex,
+  isPlatformAdmin,
+  isPlatformHost,
   latestVersion,
   listDomains,
   listIntegrations,
@@ -73,6 +76,8 @@ export default async function SettingsPage({ params }: { params: Promise<{ siteI
   const target = domainTarget();
   const managedTls = Boolean(domainProvider());
   const canDelete = session.role !== "editor";
+  const platformAdmin = await isPlatformAdmin(session.user.id);
+  const platformHosts = [config.platformDomain(), `www.${config.platformDomain()}`];
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -224,6 +229,12 @@ export default async function SettingsPage({ params }: { params: Promise<{ siteI
             <input name="hostname" required placeholder="www.yourbusiness.in" className="field max-w-sm" />
             <SubmitButton pending="Adding…" variant="secondary">Add domain</SubmitButton>
           </ActionForm>
+          {platformAdmin && (
+            <p className="text-xs text-slate-500">
+              As a platform admin you can also connect <code>{platformHosts[0]}</code> or <code>{platformHosts[1]}</code> — the platform's own root, for its landing page.
+              It needs no certificate; it goes live once it points at the load balancer.
+            </p>
+          )}
           {domains.length === 0 && <p className="text-sm text-slate-500">No custom domain yet. This site is at <strong>{site.url.replace(/^https?:\/\//, "")}</strong>.</p>}
           {domains.map((d) => (
             <div key={d.id} className="space-y-3 rounded-xl border border-slate-200 p-4">
@@ -251,14 +262,18 @@ export default async function SettingsPage({ params }: { params: Promise<{ siteI
               ) : (
                 <>
                   <p className="text-sm text-slate-600">At the company where you manage this domain's DNS (GoDaddy, Hostinger, Cloudflare…), add {managedTls ? "these two records" : "this record"}:</p>
-                  {managedTls &&
+                  {managedTls && !isPlatformHost(d.hostname) &&
                     (d.validation_name && d.validation_value ? (
                       <Record type="CNAME" name={d.validation_name.replace(/\.$/, "")} value={d.validation_value.replace(/\.$/, "")} />
                     ) : (
                       <p className="text-xs text-slate-500">Preparing the security certificate… its record appears here in a few seconds (refresh).</p>
                     ))}
-                  <Record type="CNAME" name={d.hostname} value={target} />
-                  {isApex(d.hostname) && (
+                  {isPlatformHost(d.hostname) ? (
+                    <p className="text-xs text-slate-600">Point {d.hostname} at the load balancer at Hostinger (it already is if zuuvy.site showed “There is no site here”).</p>
+                  ) : (
+                    <Record type="CNAME" name={d.hostname} value={target} />
+                  )}
+                  {isApex(d.hostname) && !isPlatformHost(d.hostname) && (
                     <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
                       {d.hostname} is a bare domain, and most DNS providers do not allow a CNAME there. Use <strong>www.{d.hostname}</strong> instead and set up a
                       redirect from {d.hostname} to it at your provider — or, if your provider offers “CNAME flattening” or an ALIAS record (Cloudflare does), use that.

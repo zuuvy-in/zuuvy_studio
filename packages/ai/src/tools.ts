@@ -74,6 +74,11 @@ export type ToolCapabilities = {
    * entries in, for this request. Everywhere else such changes become proposals.
    */
   allowOverwrite?: string[];
+  /**
+   * Whether this site uses data collections (a portfolio, or a site that
+   * already shows one). Off: no data tools, and no new `collection` sections.
+   */
+  dataTools?: boolean;
   /** Per edit, so one prompt cannot spend a month of image budget. */
   maxImages?: number;
   maxReferences?: number;
@@ -187,6 +192,9 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
         index: z.number().int().min(0).optional().describe("Insert at this position (0 = top); ignored when `after` is given"),
       }),
       run: (i) => {
+        if (i.type === "collection" && caps.dataTools === false) {
+          throw new ToolInputError("Collection sections are for portfolio sites. Use features, gallery, testimonials or other blocks here.");
+        }
         const before = new Set(state.tree.pages.flatMap((p) => p.sections.map((s) => s.id)));
         return apply(
           { op: "addSection", page: i.page, type: i.type as BlockType, props: i.props, ...(i.after ? { after: i.after } : {}), ...(i.index !== undefined ? { index: i.index } : {}) },
@@ -284,7 +292,7 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
     }),
   ];
 
-  tools.push(
+  if (caps.dataTools !== false) tools.push(
     siteTool({
       name: "view_data",
       description: "Return the site's data collections (profile, projects, experience…) with entry ids, including changes made so far in this turn.",

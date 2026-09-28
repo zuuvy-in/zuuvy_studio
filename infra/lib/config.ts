@@ -25,7 +25,7 @@ export type DeployConfig = {
   dbMaxAcu: number;
   /** Send email through SES. Off until the domain's DKIM records are in and SES has left the sandbox. */
   emailEnabled: boolean;
-  /** Bedrock image model and its region (Nova Canvas is not served in Mumbai). */
+  /** Bedrock image model and the region it is called from. */
   imageModel: string;
   imageRegion: string;
 };
@@ -70,7 +70,8 @@ export function loadConfig(): DeployConfig {
     dbMinAcu: Number(process.env.DB_MIN_ACU || 0.5),
     dbMaxAcu: Number(process.env.DB_MAX_ACU || 4),
     emailEnabled: process.env.EMAIL_ENABLED === "true" || process.env.EMAIL_ENABLED === "1",
-    imageModel: process.env.ZSITE_IMAGE_MODEL || "amazon.nova-canvas-v1:0",
-    imageRegion: process.env.ZSITE_IMAGE_REGION || "us-east-1",
+    // Nova 2 Omni through its global inference profile, called from the stack's region.
+    imageModel: process.env.ZSITE_IMAGE_MODEL || "global.amazon.nova-2-omni-v1:0",
+    imageRegion: process.env.ZSITE_IMAGE_REGION || process.env.CDK_DEFAULT_REGION || process.env.AWS_REGION || "ap-south-1",
   };
 }

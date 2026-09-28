@@ -362,6 +362,33 @@ describe("custom domains", () => {
   });
 });
 
+describe("the platform's own root", () => {
+  it("only a platform admin connects zuuvy.site, with no certificate, and the renderer then serves it", async () => {
+    const calls: string[] = [];
+    setDomainProvider({
+      requestCertificate: async () => (calls.push("request"), "arn:x"),
+      describeCertificate: async () => ({ status: "ISSUED", validation: null, failure: null }),
+      attach: async () => void calls.push("attach"),
+      detach: async () => {},
+      deleteCertificate: async () => {},
+    });
+    setDnsChecker(async () => ({ ok: true, found: ["1.2.3.4"] }));
+    const site = await portfolio("landing-root");
+    await expect(addDomain(a.tenantId, site.id, "zuuvy.site", a.userId)).rejects.toThrow(/Zuuvy address/);
+    await expect(addDomain(a.tenantId, site.id, "shop.zuuvy.site", a.userId, { platformAdmin: true })).rejects.toThrow(/Zuuvy address/);
+    const d = await addDomain(a.tenantId, site.id, "https://zuuvy.site/", a.userId, { platformAdmin: true });
+    expect(d.hostname).toBe("zuuvy.site");
+    await drainOutbox(HANDLERS); // provision → check
+    await drainOutbox(HANDLERS);
+    const [row] = await withTenant(a.tenantId, (tx) => listDomains(tx, site.id));
+    expect(row!.status).toBe("active");
+    expect(calls).toEqual([]); // the platform certificate already covers it
+    const { resolveHost } = await import("./index");
+    expect(await resolveHost("zuuvy.site")).toEqual({ tenantId: a.tenantId, siteId: site.id });
+    expect(await resolveHost("www.zuuvy.site")).toBeNull();
+  });
+});
+
 describe("GitHub sync", () => {
   it("pushes each version as a branch and publishing moves main by a merge commit", async () => {
     const refs = new Map<string, string>();

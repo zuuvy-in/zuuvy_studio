@@ -7,12 +7,19 @@ import { type SiteData, type SiteTree, parseHost } from "@zsite/core";
 import { type Product, storefrontProducts } from "./catalog";
 import { config } from "./config";
 import { type Tx, isUuid, withGlobal, withTenant } from "./db";
+import { isPlatformHost } from "./domains";
 import { siteInventory, sourcesFor, tracksStock } from "./inventory";
 import { type PublicOrder, publicOrder } from "./orders";
 
 export type ResolvedSite = { tenantId: string; siteId: string };
 
 export async function resolveHost(host: string): Promise<ResolvedSite | null> {
+  const bare = host.toLowerCase().replace(/:\d+$/, "").replace(/\.$/, "");
+  // The platform's root (and www) answer only if an admin connected them to a site.
+  if (isPlatformHost(bare)) {
+    const row = await withGlobal((tx) => tx.one<{ tenant_id: string; site_id: string }>("select * from resolve_site_by_domain($1)", [bare]));
+    return row ? { tenantId: row.tenant_id, siteId: row.site_id } : null;
+  }
   const parsed = parseHost(host, config.platformDomain());
   if (!parsed) return null;
   const row = await withGlobal(async (tx) => {

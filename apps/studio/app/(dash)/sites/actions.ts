@@ -15,6 +15,7 @@ import {
   importFromBranch,
   importRevision,
   importSite,
+  isPlatformAdmin,
   publishVersion,
   removeDomain,
   renameSite,
@@ -211,7 +212,9 @@ export async function addDomainAction(_: ActionState, form: FormData): Promise<A
   const session = await requireSession();
   const siteId = text(form, "siteId");
   return attempt(async () => {
-    const d = await addDomain(session.tenant.id, siteId, text(form, "hostname"), session.user.id);
+    const d = await addDomain(session.tenant.id, siteId, text(form, "hostname"), session.user.id, {
+      platformAdmin: await isPlatformAdmin(session.user.id),
+    });
     revalidatePath(`/sites/${siteId}/settings`);
     return { ok: `${d.hostname} added. The DNS records to add appear below in a few seconds.` };
   });
