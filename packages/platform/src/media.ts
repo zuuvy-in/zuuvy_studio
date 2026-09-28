@@ -135,10 +135,20 @@ export function imageModel(): ImageModel {
   };
 }
 
-/** Canvas and Titan take one JSON request body; everything else speaks Converse. */
-export function imageApi(model: string): "invoke" | "converse" {
-  return /nova-canvas|titan-image/.test(model) ? "invoke" : "converse";
+/**
+ * How a model is called: Canvas/Titan take Amazon's image body, Stability's
+ * text-to-image models their own, everything else (Nova 2 Omni) Converse.
+ */
+export function imageApi(model: string): "invoke" | "stability" | "converse" {
+  if (/nova-canvas|titan-image/.test(model)) return "invoke";
+  if (/^(us\.|eu\.|apac\.|global\.)?stability\./.test(model)) return "stability";
+  return "converse";
 }
+
+/** Stability models that make a picture from text (the rest only edit one). */
+export const isStabilityTextToImage = (id: string) => /stability\.(stable-image-(core|ultra)|sd3)/.test(id);
+
+const STABILITY_RATIO: Record<ImageAspect, string> = { wide: "16:9", landscape: "3:2", square: "1:1", portrait: "2:3" };
 
 /** Anything with the client's `send`: the real Bedrock client, or a fake in tests. */
 export type ImageSender = { send(command: InvokeModelCommand | ConverseCommand): Promise<unknown> };
@@ -213,6 +223,20 @@ export async function discoverImageModel(region: string, lister?: ModelLister): 
       /* nothing listable either */
     }
   }
+  if (!found) {
+    // No Amazon image model: a Stability text-to-image model, if the region has one.
+    try {
+      const models = (await client.send(new ListFoundationModelsCommand({ byOutputModality: "IMAGE" }))) as {
+        modelSummaries?: { modelId?: string; modelLifecycle?: { status?: string } }[];
+      };
+      const usable = (models.modelSummaries ?? [])
+        .filter((m) => m.modelLifecycle?.status !== "LEGACY" && isStabilityTextToImage(m.modelId ?? ""))
+        .map((m) => m.modelId!);
+      found = usable.find((id) => /stable-image-core/.test(id)) ?? usable[0] ?? null;
+    } catch {
+      /* nothing */
+    }
+  }
   if (!lister) discovered.set(region, found);
   return found;
 }
@@ -266,6 +290,31 @@ async function renderWith(
   const size = ASPECT_SIZES[req.aspect];
   const client = client0 ?? new BedrockRuntimeClient({ region });
   const text = `${req.prompt.trim()}. ${STYLE_HINTS[req.style]}`.slice(0, 1000);
+
+  if (imageApi(model) === "stability") {
+    const body: Record<string, unknown> = {
+      prompt: text,
+      negative_prompt: NEGATIVE,
+      aspect_ratio: STABILITY_RATIO[req.aspect],
+      output_format: "png",
+      ...(/sd3/.test(model) ? { mode: "text-to-image" } : {}),
+    };
+    let res: { body?: Uint8Array };
+    try {
+      res = (await client.send(
+        new InvokeModelCommand({ modelId: model, contentType: "application/json", accept: "application/json", body: JSON.stringify(body) }),
+      )) as { body?: Uint8Array };
+    } catch (e) {
+      explainImageError(e, model, region);
+    }
+    const parsed = JSON.parse(new TextDecoder().decode(res.body)) as { images?: string[]; finish_reasons?: (string | null)[] };
+    const reason = parsed.finish_reasons?.find((r) => r);
+    if (reason || !parsed.images?.[0]) {
+      throw new UserError(reason ? "The picture request was blocked by the image model's content filter. Describe it differently." : "The image model returned no picture.");
+    }
+    const bytes = Buffer.from(parsed.images[0], "base64");
+    return { bytes, ...(imageSize(bytes) ?? size), contentType: "image/png", ext: "png" };
+  }
 
   if (imageApi(model) === "converse") {
     let res: ConverseCommandOutput;

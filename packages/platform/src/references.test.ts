@@ -133,3 +133,36 @@ describe("finding an image model the account can call", async () => {
     ).rejects.toThrow(/No image model this account can use from ap-south-1/);
   });
 });
+
+describe("Stability text-to-image", async () => {
+  const { renderImage, imageApi, isStabilityTextToImage, discoverImageModel } = await import("./media");
+  it("sends Stability's body and reads its reply; editing-only models are never chosen", async () => {
+    const png = new Uint8Array(33);
+    png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 16, 0, 0, 0, 9]);
+    let body: Record<string, unknown> = {};
+    const client = {
+      async send(cmd: { input: { body: string } }) {
+        body = JSON.parse(cmd.input.body);
+        return { body: new TextEncoder().encode(JSON.stringify({ images: [Buffer.from(png).toString("base64")], finish_reasons: [null] })) };
+      },
+    };
+    const out = await renderImage({ prompt: "A tidy shop counter", aspect: "wide", style: "photo" }, { client: client as never, model: { model: "stability.stable-image-core-v1:1", region: "us-west-2" } });
+    expect(body).toMatchObject({ aspect_ratio: "16:9", output_format: "png" });
+    expect(out).toMatchObject({ width: 16, height: 9 });
+    expect(imageApi("stability.sd3-5-large-v1:0")).toBe("stability");
+    expect(isStabilityTextToImage("stability.stable-image-inpaint-v1:0")).toBe(false);
+    const lister = {
+      async send(cmd: { input: { byProvider?: string } }) {
+        if (cmd.input && "byProvider" in cmd.input) return { modelSummaries: [{ modelId: "amazon.nova-canvas-v1:0", modelLifecycle: { status: "LEGACY" } }] };
+        return {
+          inferenceProfileSummaries: [],
+          modelSummaries: [
+            { modelId: "stability.stable-image-inpaint-v1:0", modelLifecycle: { status: "ACTIVE" } },
+            { modelId: "stability.stable-image-core-v1:1", modelLifecycle: { status: "ACTIVE" } },
+          ],
+        };
+      },
+    };
+    expect(await discoverImageModel("us-west-2", lister as never)).toBe("stability.stable-image-core-v1:1");
+  });
+});
