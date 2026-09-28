@@ -144,6 +144,7 @@ export function bedrockProvider(opts: BedrockOptions = {}): Provider {
   const client = opts.client ?? new BedrockRuntimeClient({ region });
 
   return async ({ system, user, tools, model, maxIterations, attachments = [] }) => {
+    const isClaude = /anthropic\.claude/.test(model);
     const systemBlocks: SystemContentBlock[] = [{ text: system }];
     if (opts.promptCache) systemBlocks.push({ cachePoint: { type: "default" } });
     const toolConfig = { tools: toBedrockTools(tools) };
@@ -158,7 +159,12 @@ export function bedrockProvider(opts: BedrockOptions = {}): Provider {
         system: systemBlocks,
         messages,
         toolConfig,
-        inferenceConfig: { maxTokens: opts.maxTokens ?? 5000, temperature: opts.temperature ?? 0 },
+        inferenceConfig: {
+          maxTokens: opts.maxTokens ?? (isClaude ? 16000 : 5000),
+          // Nova is most reliable at tool calling near-greedy. Current Claude models
+          // reject sampling parameters outright, so none are sent for them.
+          ...(isClaude ? {} : { temperature: opts.temperature ?? 0 }),
+        },
       };
       let res: ConverseCommandOutput;
       try {
