@@ -94,3 +94,30 @@ describe("brand locks, data proposals and optional tools", () => {
     expect(ref.colors).toEqual(["#112233"]);
   });
 });
+
+describe("when picture generation is refused", () => {
+  it("does not count the failure, refuses retries, and keeps the rest of the edit possible", async () => {
+    let calls = 0;
+    const { tools, state } = createSiteTools(tree(), {
+      generateImage: async () => {
+        calls++;
+        throw new Error("AWS has not allowed this account to use amazon.nova-canvas-v1:0 in us-east-1 yet.");
+      },
+      maxImages: 4,
+    });
+    await expect(tool(tools, "generate_image").run({ prompt: "A bright shop counter with phone cases" })).rejects.toThrow(/Do not retry/);
+    await expect(tool(tools, "generate_image").run({ prompt: "Another picture of the shop front" })).rejects.toThrow(/unavailable/);
+    expect(calls).toBe(1);
+    expect(state.images).toBe(0);
+    expect(state.imageError).toMatch(/nova-canvas/);
+    await tool(tools, "set_theme").run({ colors: { primary: "#0f766e" } });
+    expect(state.operations).toHaveLength(1);
+  });
+
+  it("strips Nova's reasoning tags from what reaches the version history", async () => {
+    const { stripReasoning } = await import("./providers/bedrock");
+    expect(stripReasoning("<thinking>plan</thinking> Added an FAQ.")).toBe("Added an FAQ.");
+    expect(stripReasoning("The tool results indicate a failure. </thinking>")).toBe("");
+    expect(stripReasoning("Done. <thinking>unfinished")).toBe("Done.");
+  });
+});

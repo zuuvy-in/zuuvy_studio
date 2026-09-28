@@ -80,7 +80,7 @@ How a site is built:
 - Refer to pages by path ("/", "/about") or id, and to sections by id. Ids of things you add come back in the tool result.
 - Product grids fill themselves from the connected catalogue. Never type products, prices or stock into other blocks; to feature a category, set a productGrid's \`category\` to one of the catalogue's categories exactly as given.
 - Links are "/path", "/#section-id", https://, mailto: or tel:. Anchor links point at section ids.
-- Images must be https URLs: ones the user gave you, ones from the media library listed with the request, or ones generate_image returned. Prefer the business's own uploaded pictures for its products, premises and people. If generate_image is available and the request asks for pictures, illustrations or a more visual site, generate them; otherwise leave image fields out and the site shows a tasteful placeholder. Never invent an image URL.
+- Images must be https URLs: ones the user gave you, ones from the media library listed with the request, or ones generate_image returned. Prefer the business's own uploaded pictures for its products, premises and people. If generate_image is available and the request asks for pictures, illustrations or a more visual site, generate them; otherwise leave image fields out and the site shows a tasteful placeholder. Never invent an image URL. If generate_image fails, do not retry it: make every other change the request asks for, leave those image fields empty, and mention it in your summary. A failed picture is never a reason to change nothing.
 - Structured content lives in data collections (profile, projects, experience, education, skills, services, testimonials, awards, publications, clients, gallery), not in section props. A "collection" section shows one of them. Portfolios in particular should be built this way: put the facts in the data, then show them with collection sections. Use the data tools (view_data, add_entry, update_entry, remove_entry, move_entry).
 - The owner's data is theirs. Adding entries and filling empty fields is fine. Changing a value that is already there, removing an entry, or replacing the profile is held for the owner's permission automatically — do not try to get round it; say in your summary what you proposed. Never invent facts for the data (employers, clients, dates, awards, quotes); use what the owner gave you, attached files included.
 - Motion is a theme setting (set_theme motion: none, subtle or lively). Use it when the request asks for animation or a livelier feel.
@@ -90,7 +90,7 @@ How to work:
 - Do what was asked, completely, and nothing unrelated. Keep what the user did not ask to change.
 - Write real, specific copy for this business in plain English (Indian English spelling), short sentences. Do not invent facts that matter: phone numbers, addresses, prices, years in business, awards, customer names. When a block needs such a fact and you do not have it, write copy that does not need it, or leave the optional field out.
 - Keep the design coherent: a palette with enough contrast (text on background and on surface must stay readable), at most two fonts, consistent tone.
-- Make all the calls you need, then reply with one sentence (under 25 words) saying what you changed, for the version history. Do not ask questions; if the request is ambiguous, choose the most reasonable reading.
+- Make all the calls you need, then reply with one sentence (under 25 words, no <thinking> tags) saying what you changed, for the version history. Do not ask questions; if the request is ambiguous, choose the most reasonable reading.
 
 ## Blocks
 
@@ -167,8 +167,9 @@ ${opts.prompt}`;
 
   const result = await run({ system: SYSTEM, user, tools, model, maxIterations: opts.maxIterations ?? 30, attachments: opts.attachments });
 
+  const pictures = state.imageError ? ` Picture generation failed: ${state.imageError}` : "";
   const fail = (message: string, outcome: "refused" | "no_change") =>
-    Object.assign(new AgentError(message), { usage: result.usage, outcome, images: state.images });
+    Object.assign(new AgentError(`${message}${pictures}`), { usage: result.usage, outcome, images: state.images });
   if (result.refused) throw fail("The AI declined this request. Try rephrasing it.", "refused");
   if (!state.operations.length && !state.dataOperations.length && !state.proposals.length) {
     throw fail(result.finalText ? `The AI made no changes: ${result.finalText.slice(0, 300)}` : "The AI made no changes.", "no_change");
@@ -176,7 +177,9 @@ ${opts.prompt}`;
   return {
     tree: state.tree,
     operations: state.operations,
-    summary: result.finalText.slice(0, 300) || `${state.operations.length + state.dataOperations.length} changes`,
+    summary:
+      (result.finalText.slice(0, 280) || `${state.operations.length + state.dataOperations.length} changes`) +
+      (state.imageError ? " (pictures could not be generated)" : ""),
     model: result.model,
     provider,
     usage: result.usage,

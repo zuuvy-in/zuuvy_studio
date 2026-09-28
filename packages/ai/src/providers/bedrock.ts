@@ -118,6 +118,17 @@ function attachmentBlocks(attachments: Attachment[]): ContentBlock[] {
   });
 }
 
+/**
+ * Nova writes its reasoning in <thinking> tags (sometimes unclosed, sometimes
+ * with only the closing tag left). It is not for the version history.
+ */
+export function stripReasoning(text: string): string {
+  return text
+    .replace(/<thinking>[\s\S]*?(<\/thinking>|$)/gi, "")
+    .replace(/^[\s\S]*?<\/thinking>/i, "")
+    .trim();
+}
+
 /** Tokens already spent are still spent when a later request fails; the error carries them. */
 function withUsage(fn: () => never, usage: Usage): never {
   try {
@@ -179,7 +190,8 @@ export function bedrockProvider(opts: BedrockOptions = {}): Provider {
         .map((b) => ("text" in b && typeof b.text === "string" ? b.text : ""))
         .join(" ")
         .trim();
-      if (text) lastText = text;
+      const said = stripReasoning(text);
+      if (said) lastText = said;
 
       const uses = message.content.flatMap((b) => ("toolUse" in b && b.toolUse ? [b.toolUse] : []));
       if (!uses.length) {

@@ -30,6 +30,8 @@ export type EditState = {
   dataOperations: DataOp[];
   /** Changes to existing data the owner has to allow first. */
   proposals: Proposal[];
+  /** Why picture generation failed in this turn, if it did — it is not retried. */
+  imageError?: string;
 };
 
 export type Proposal = { op: DataOp; description: string };
@@ -330,11 +332,21 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
           style: z.enum(["photo", "illustration", "3d", "flat"]).default("photo"),
         }),
         run: async (i) => {
+          // One refusal (no access, no quota) will not change on a retry: say so once and
+          // steer the model back to the rest of the request instead of burning attempts.
+          if (state.imageError) {
+            throw new ToolInputError(`Picture generation is unavailable (${state.imageError}). Do not call generate_image again; leave image fields empty and finish the rest of the request.`);
+          }
           if (state.images >= max) throw new ToolInputError(`The limit of ${max} new pictures for this request is reached. Reuse one of the URLs you already have.`);
-          state.images++;
           const palette = caps.imagePalette?.length ? ` Colour palette: ${caps.imagePalette.join(", ")}.` : "";
-          const image = await generate({ prompt: `${i.prompt}${palette}`, aspect: i.aspect, style: i.style });
-          return JSON.stringify({ ok: true, ...image });
+          try {
+            const image = await generate({ prompt: `${i.prompt}${palette}`, aspect: i.aspect, style: i.style });
+            state.images++; // only pictures actually made count against the limit
+            return JSON.stringify({ ok: true, ...image });
+          } catch (e) {
+            state.imageError = (e as Error).message;
+            throw new ToolInputError(`Picture generation failed: ${state.imageError} Do not retry; leave image fields empty and carry on with every other part of the request.`);
+          }
         },
       }),
     );
