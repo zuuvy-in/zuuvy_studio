@@ -137,6 +137,8 @@ export class ServicesStack extends Stack {
       actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
       resources: [
         "arn:aws:bedrock:*::foundation-model/*",
+        // Global inference profiles (global.*) route to the region-less model ARN.
+        "arn:aws:bedrock:::foundation-model/*",
         `arn:aws:bedrock:*:${this.account}:inference-profile/*`,
       ],
     });

@@ -98,7 +98,7 @@ describe("bedrock provider (Converse loop)", () => {
     };
     const err = await editSite({ tree: tree(), prompt: "x", context, runner: bedrockProvider({ client, region: "ap-south-1" }) }).catch((e) => e);
     expect(err).toBeInstanceOf(AgentError);
-    expect(err.message).toMatch(/refused access to apac\.amazon\.nova-pro-v1:0 in ap-south-1/);
+    expect(err.message).toMatch(/refused access to apac\.amazon\.nova-pro-v1:0 in ap-south-1: not authorized/);
   });
 
   const failing = (name: string, message: string) => ({
@@ -132,5 +132,17 @@ describe("Claude through Bedrock", () => {
     const nova = fakeBedrock([toolUse("t1", "set_theme", { colors: { primary: "#0f766e" } }), done("Teal.")]);
     await editSite({ tree: tree(), prompt: "Teal", context, runner: bedrockProvider({ client: nova.client }) });
     expect(nova.requests[0]!.inferenceConfig).toMatchObject({ temperature: 0 });
+  });
+});
+
+describe("Claude not yet enabled on the account", () => {
+  it("says to open it once in the playground when AWS names Marketplace", async () => {
+    const client = {
+      async send(): Promise<ConverseCommandOutput> {
+        throw Object.assign(new Error("Model access is denied due to IAM user or service role is not authorized to perform the required AWS Marketplace actions (aws-marketplace:ViewSubscriptions, aws-marketplace:Subscribe)"), { name: "AccessDeniedException" });
+      },
+    };
+    const err = await editSite({ tree: tree(), prompt: "x", context, model: "global.anthropic.claude-sonnet-5", runner: bedrockProvider({ client, region: "ap-south-1" }) }).catch((e) => e);
+    expect(err.message).toMatch(/not been enabled on this AWS account yet/);
   });
 });

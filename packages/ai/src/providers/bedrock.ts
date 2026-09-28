@@ -69,7 +69,15 @@ function explain(e: unknown, model: string, region: string): never {
     case "CredentialsProviderError":
       throw new AgentError("No AWS credentials found for Bedrock. Set AWS_PROFILE or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (in production, the service's IAM role).");
     case "AccessDeniedException":
-      throw new AgentError(`AWS refused access to ${model} in ${region}. Check the IAM policy allows bedrock:InvokeModel on the model and its inference profile, and that no Service Control Policy denies it.`);
+      if (/marketplace/i.test(err.message)) {
+        throw new AgentError(
+          `${model} has not been enabled on this AWS account yet. Open it once in the Bedrock playground (${region}) as an administrator — that accepts its AWS Marketplace terms for the whole account — then try again.`,
+        );
+      }
+      if (/use case|use-case|form/i.test(err.message)) {
+        throw new AgentError(`${model} needs Anthropic's one-time use-case form: open the model in the Bedrock console (${region}) and submit it, then try again.`);
+      }
+      throw new AgentError(`AWS refused access to ${model} in ${region}: ${err.message}`);
     case "ResourceNotFoundException":
     case "ValidationException": {
       // "Operation not allowed" is not about the request: AWS has not opened
