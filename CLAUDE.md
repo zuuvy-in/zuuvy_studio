@@ -65,3 +65,9 @@ npm run admin:create   # platform superadmin (rishav@zuuvy.in by default)
   `runner` get no MCP unless they set `mcp`.
 - **A model that cannot be used falls back** (`ZSITE_AI_FALLBACK_MODEL`), only
   when nothing was edited yet; errors mark this with `AgentError.unavailable`.
+- **Plan first** (`ai/src/plan.ts`, `planVersion`): a plan edits nothing and
+  makes no version; the approved plan comes back from the browser and is
+  re-validated (`parsePlan`) before `generateVersion` builds it.
+- **Selling out of stock** (`sites.out_of_stock = 'sell'`): accepting takes
+  what stock exists and records it in `orders.stock_taken`; cancelling returns
+  exactly that. Never return the ordered quantity for such an order.

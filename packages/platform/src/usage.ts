@@ -5,7 +5,7 @@
  */
 import type { Tx } from "./db";
 
-export type UsageOutcome = "version" | "no_change" | "refused" | "error";
+export type UsageOutcome = "version" | "no_change" | "refused" | "error" | "plan";
 
 export type UsageRecord = {
   userId: string | null;

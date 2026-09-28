@@ -44,11 +44,21 @@ export default async function ProductPage({ params }: Props) {
               </p>
             )}
             {product.description && <p className="zs-lede" style={{ marginTop: 16 }}>{product.description}</p>}
-            <p className={product.in_stock ? "" : "zs-alert"} style={{ fontWeight: 600 }}>
-              {!product.in_stock ? "Out of stock" : product.stock !== null && product.stock <= 10 ? `Only ${product.stock} left` : "In stock"}
+            <p className={product.in_stock || product.backorders ? "" : "zs-alert"} style={{ fontWeight: 600 }}>
+              {!product.in_stock
+                ? product.backorders
+                  ? "Made to order — the shop confirms when it can deliver"
+                  : "Out of stock"
+                : product.stock !== null && product.stock <= 10 && !product.backorders
+                  ? `Only ${product.stock} left`
+                  : "In stock"}
             </p>
             <div className="zs-card" style={{ marginTop: 20 }}>
-              <OrderForm productId={product.id} max={product.stock} inStock={product.in_stock} />
+              <OrderForm
+                productId={product.id}
+                max={product.backorders ? null : product.stock}
+                inStock={product.in_stock || Boolean(product.backorders)}
+              />
             </div>
           </div>
         </div>

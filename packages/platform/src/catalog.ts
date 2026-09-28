@@ -25,6 +25,8 @@ export type Product = {
   active: boolean;
   synced_at: Date | null;
   updated_at: Date;
+  /** Set by the storefront: this store takes orders beyond its stock (sites.out_of_stock = 'sell'). */
+  backorders?: boolean;
 };
 
 export const PRODUCT_COLUMNS = `id, source, external_id, name, description, category, price, mrp, currency, unit_label,

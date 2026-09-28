@@ -238,3 +238,26 @@ Validation, Anthropic 403/404) fails before it edits anything, so `editSite`
 reruns the request on `ZSITE_AI_FALLBACK_MODEL` (default: the provider's
 default model) and says so in the version summary. Usage from both attempts is
 recorded.
+
+## Plan first
+
+A request can be one line. With "Plan first" on (the composer's default),
+`planVersion` → `planSite` (`packages/ai/src/plan.ts`) shows the model the same
+facts the builder sees, plus the design kit and reference fetching but none of
+the editing tools, and has it call `submit_plan` with pages, sections, look,
+imagery, its assumptions and at most three questions. Nothing is edited and no
+version is made; the plan is metered in `ai_usage` as outcome `plan`. The
+owner approves it, with optional notes or answers, and `generateVersion` builds
+the request plus `planBrief(plan, notes)`. The plan goes to the browser and
+back, so `parsePlan` validates it again. The version keeps the owner's own
+request as its prompt. The planning call is made outside the form's action so
+any attached files are still in the form for the build.
+
+## Out-of-stock products
+
+`sites.out_of_stock` (per store): `show` lists them as out of stock and refuses
+orders (the default); `hide` leaves them off the storefront; `sell` keeps
+taking orders ("Made to order"). In `sell`, accepting an order takes whatever
+stock there is, down to zero, and records it in `orders.stock_taken`;
+cancelling puts back exactly that. It has no effect when stock is not counted.
+With a data source (Zuuvy) the order still goes there, and it may refuse.

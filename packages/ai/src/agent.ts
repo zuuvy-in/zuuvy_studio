@@ -92,6 +92,8 @@ How a site is built:
 - When the request names a website as a reference and fetch_reference is available, look at it first, then build in that spirit for this business: its structure, tone and palette, never its words, images or name.
 
 How to work:
+- Requests are often one short line ("a site for my bakery in Patna", "make it look premium"). Treat one as a brief to a senior web designer: decide the audience, structure, style and copy yourself and deliver a finished, polished result — every section filled with real copy, pictures where they help, a coherent theme — never a skeleton. For a new site, or one still showing its template's copy, build every page and section a business of this kind needs.
+- When the request includes an approved plan, follow it: the owner agreed to it. Their notes on it override the plan.
 - Do what was asked, completely, and nothing unrelated. Keep what the user did not ask to change.
 - Write real, specific copy for this business in plain English (Indian English spelling), short sentences. Do not invent facts that matter: phone numbers, addresses, prices, years in business, awards, customer names. When a block needs such a fact and you do not have it, write copy that does not need it, or leave the optional field out.
 - Keep the design coherent: a palette with enough contrast (text on background and on surface must stay readable), at most two fonts, consistent tone.
@@ -137,14 +139,73 @@ export function resolveProvider(name: string | undefined): ProviderName {
   return name === "anthropic" ? "anthropic" : "bedrock";
 }
 
+/**
+ * What the model is told about the business and the site, then the request.
+ * Shared by editing and planning, so a plan is made from the same facts the
+ * build will see.
+ */
+export function describeRequest(
+  opts: Pick<EditOptions, "context" | "tree" | "data" | "brand" | "attachments" | "capabilities" | "prompt">,
+  dataTools: boolean,
+  mcp: McpConnection | null,
+  tools: { name: string }[],
+): string {
+  const ctx = opts.context;
+  const facts = [
+    `Business: ${ctx.businessName}`,
+    `Kind of site: ${ctx.siteKind}`,
+    ctx.catalogueSource
+      ? `Catalogue: ${ctx.productCount} products from ${ctx.catalogueSource}. Categories: ${
+          ctx.categories.map((c) => `${c.category} (${c.count})`).join(", ") || "none"
+        }`
+      : "Catalogue: none connected (product grids will be empty until one is).",
+    ctx.media?.length
+      ? `Media library (use these URLs as they are):\n${ctx.media.map((m) => `- ${m.url} — ${m.alt || "(no description)"} [${m.kind}]`).join("\n")}`
+      : "Media library: empty.",
+    dataTools
+      ? "Data collections: available (portfolio content lives there)."
+      : "Data collections: not used on this kind of site — build with ordinary blocks, never collection sections.",
+    opts.brand ? `Brand kit:\n${opts.brand}` : "Brand kit: none — choose colours, fonts and imagery that fit the business.",
+    opts.attachments?.length
+      ? `Attached files (read them; they are the owner's material — use their facts, products, wording and look where the request asks): ${opts.attachments.map((a) => a.name).join(", ")}`
+      : "",
+    `Picture generation: ${opts.capabilities?.generateImage ? `available (generate_image, up to ${opts.capabilities.maxImages ?? 4} this request)` : "not available — use the media library or leave image fields out"}.`,
+    mcp?.summary.length
+      ? `Design helpers (MCP tools — call them before choosing colours, fonts, layout or photos when the request is about the look):\n${mcp.summary.map((l) => `- ${l}`).join("\n")}${
+          tools.some((t) => t.name === "design__search_photos")
+            ? "\nStock photos: design__search_photos returns real photos whose https URLs go straight into image fields; prefer them to generated pictures for real places, people and food."
+            : ""
+        }`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return `${facts}
+
+Current site outline:
+${outline(opts.tree)}
+
+Current site tree:
+${JSON.stringify(opts.tree)}
+
+${dataTools ? `Current data collections:\n${JSON.stringify(opts.data ?? {})}` : ""}
+
+Request:
+${opts.prompt}`;
+}
+
+/** Collections belong to portfolios (and to any site already showing one, so its data is not stranded). */
+export function usesDataTools(tree: SiteTree, siteKind: SiteContext["siteKind"]): boolean {
+  return siteKind === "portfolio" || tree.pages.some((p) => p.sections.some((s) => s.type === "collection"));
+}
+
 export async function editSite(opts: EditOptions): Promise<EditResult> {
   const provider = opts.provider ?? resolveProvider(process.env.ZSITE_AI_PROVIDER);
   let model = opts.model || DEFAULT_MODELS[provider];
   const fallback = opts.fallbackModel ?? (model !== DEFAULT_MODELS[provider] ? DEFAULT_MODELS[provider] : "");
   const run = opts.runner ?? (provider === "anthropic" ? anthropicProvider() : bedrockProvider(opts.bedrock));
-  // Collections belong to portfolios (and to any site already showing one, so its data is not stranded).
-  const usesCollections = opts.tree.pages.some((p) => p.sections.some((s) => s.type === "collection"));
-  const dataTools = opts.context.siteKind === "portfolio" || usesCollections;
+  const dataTools = usesDataTools(opts.tree, opts.context.siteKind);
   const { tools: siteTools, state } = createSiteTools(opts.tree, { ...opts.capabilities, dataTools }, opts.data ?? {});
   // Runners supplied by tests get no MCP unless they ask for it.
   const mcp: McpConnection | null = opts.mcp === false || (opts.mcp === undefined && opts.runner) ? null : await connectMcp(opts.mcp || {});
@@ -156,50 +217,7 @@ export async function editSite(opts: EditOptions): Promise<EditResult> {
   }
 
   async function edit(): Promise<EditResult> {
-    const ctx = opts.context;
-
-    const facts = [
-      `Business: ${ctx.businessName}`,
-      `Kind of site: ${ctx.siteKind}`,
-      ctx.catalogueSource
-        ? `Catalogue: ${ctx.productCount} products from ${ctx.catalogueSource}. Categories: ${
-            ctx.categories.map((c) => `${c.category} (${c.count})`).join(", ") || "none"
-          }`
-        : "Catalogue: none connected (product grids will be empty until one is).",
-      ctx.media?.length
-        ? `Media library (use these URLs as they are):\n${ctx.media.map((m) => `- ${m.url} — ${m.alt || "(no description)"} [${m.kind}]`).join("\n")}`
-        : "Media library: empty.",
-      dataTools
-        ? "Data collections: available (portfolio content lives there)."
-        : "Data collections: not used on this kind of site — build with ordinary blocks, never collection sections.",
-      opts.brand ? `Brand kit:\n${opts.brand}` : "Brand kit: none — choose colours, fonts and imagery that fit the business.",
-      opts.attachments?.length
-        ? `Attached files (read them; they are the owner's material — use their facts, products, wording and look where the request asks): ${opts.attachments.map((a) => a.name).join(", ")}`
-        : "",
-      `Picture generation: ${opts.capabilities?.generateImage ? `available (generate_image, up to ${opts.capabilities.maxImages ?? 4} this request)` : "not available — use the media library or leave image fields out"}.`,
-      mcp?.summary.length
-        ? `Design helpers (MCP tools — call them before choosing colours, fonts, layout or photos when the request is about the look):\n${mcp.summary.map((l) => `- ${l}`).join("\n")}${
-            tools.some((t) => t.name === "design__search_photos")
-              ? "\nStock photos: design__search_photos returns real photos whose https URLs go straight into image fields; prefer them to generated pictures for real places, people and food."
-              : ""
-          }`
-        : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    const user = `${facts}
-
-  Current site outline:
-  ${outline(opts.tree)}
-
-  Current site tree:
-  ${JSON.stringify(opts.tree)}
-
-  ${dataTools ? `Current data collections:\n${JSON.stringify(opts.data ?? {})}` : ""}
-
-  Request:
-  ${opts.prompt}`;
+    const user = describeRequest(opts, dataTools, mcp, tools);
 
     // A model the account cannot use fails before it edits anything, so the
     // same request can go to the fallback model with nothing to undo.

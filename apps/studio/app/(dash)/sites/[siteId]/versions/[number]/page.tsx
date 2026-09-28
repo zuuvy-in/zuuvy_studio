@@ -9,7 +9,7 @@ import { Badge, ButtonLink, Card, CardHeader, Dl, Icon, buttonClass } from "@/co
 import { ago, dateTime } from "@/lib/format";
 import { aiStatus } from "@/lib/ai";
 import { requireSession } from "@/lib/session";
-import { applyProposalsAction, generateAction, publishAction, restoreAction } from "../../../actions";
+import { applyProposalsAction, generateAction, planAction, publishAction, restoreAction } from "../../../actions";
 
 export default async function VersionPage({ params }: { params: Promise<{ siteId: string; number: string }> }) {
   const { siteId, number: raw } = await params;
@@ -137,7 +137,7 @@ export default async function VersionPage({ params }: { params: Promise<{ siteId
           ) : (
             <Card className="p-8 text-sm text-slate-600">This is a code version ({version.git_ref}); previews of code versions come with Git import.</Card>
           )}
-          <Composer action={generateAction} siteId={site.id} baseNumber={version.number} aiReady={ai.ready} setupHint={ai.hint} accept={ATTACHMENT_ACCEPT} title={`Continue from v${version.number}`} />
+          <Composer action={generateAction} plan={planAction} siteId={site.id} baseNumber={version.number} aiReady={ai.ready} setupHint={ai.hint} accept={ATTACHMENT_ACCEPT} title={`Continue from v${version.number}`} />
         </div>
 
         <aside className="space-y-6">

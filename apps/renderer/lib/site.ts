@@ -33,6 +33,7 @@ export function toView(p: {
   in_stock: boolean;
   stock: number | null;
   unit_label: string | null;
+  backorders?: boolean;
 }): ProductView {
   return {
     id: p.id,
@@ -45,6 +46,7 @@ export function toView(p: {
     inStock: p.in_stock,
     stock: p.stock,
     unitLabel: p.unit_label,
+    backorders: p.backorders ?? false,
   };
 }
 

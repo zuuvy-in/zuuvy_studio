@@ -7,7 +7,7 @@ import { Badge, ButtonLink, Card, CardHeader, Icon } from "@/components/ui";
 import { ago, dateTime } from "@/lib/format";
 import { aiStatus } from "@/lib/ai";
 import { requireSession } from "@/lib/session";
-import { generateAction, importRevisionAction, publishAction } from "../../actions";
+import { generateAction, planAction, importRevisionAction, publishAction } from "../../actions";
 
 export const metadata = { title: "Versions" };
 
@@ -25,7 +25,7 @@ export default async function VersionsPage({ params }: { params: Promise<{ siteI
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div className="min-w-0 space-y-6">
-        <Composer action={generateAction} siteId={site.id} baseNumber={latest.number} aiReady={ai.ready} setupHint={ai.hint} accept={ATTACHMENT_ACCEPT} />
+        <Composer action={generateAction} plan={planAction} siteId={site.id} baseNumber={latest.number} aiReady={ai.ready} setupHint={ai.hint} accept={ATTACHMENT_ACCEPT} />
 
         <Card>
           <CardHeader title="All versions" description="Every change is kept. Open one to preview it, see what changed, publish it or bring it back." />

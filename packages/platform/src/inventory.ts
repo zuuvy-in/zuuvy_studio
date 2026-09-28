@@ -22,10 +22,19 @@ export type InventoryMode = "studio" | "source" | "none";
 export const INVENTORY_MODES: InventoryMode[] = ["studio", "source", "none"];
 export const SITE_KINDS: SiteKind[] = ["landing", "portfolio", "store"];
 
-export type SiteInventory = { kind: SiteKind; inventory: InventoryMode; inventory_source: string | null };
+/**
+ * What a store does with a product it has run out of:
+ *   show  list it as "Out of stock", no ordering (the default)
+ *   hide  leave it off the storefront until stock returns
+ *   sell  keep taking orders; the business sources the rest
+ */
+export type OutOfStockMode = "show" | "hide" | "sell";
+export const OUT_OF_STOCK_MODES: OutOfStockMode[] = ["show", "hide", "sell"];
+
+export type SiteInventory = { kind: SiteKind; inventory: InventoryMode; inventory_source: string | null; out_of_stock: OutOfStockMode };
 
 export async function siteInventory(tx: Tx, siteId: string): Promise<SiteInventory> {
-  return tx.get<SiteInventory>("select kind, inventory, inventory_source from sites where id = $1", [siteId], "site");
+  return tx.get<SiteInventory>("select kind, inventory, inventory_source, out_of_stock from sites where id = $1", [siteId], "site");
 }
 
 /** Which product sources a store sells; null for a site that is not a store. */
@@ -35,6 +44,14 @@ export function sourcesFor(s: SiteInventory): string[] | null {
 }
 
 export const tracksStock = (s: SiteInventory) => s.kind !== "store" || s.inventory !== "none";
+
+/** Orders are taken whatever the stock says. Meaningless without stock tracking, where nothing is ever out. */
+export const sellsOutOfStock = (s: SiteInventory) => s.kind === "store" && tracksStock(s) && s.out_of_stock === "sell";
+
+export async function setOutOfStock(tx: Tx, siteId: string, mode: string): Promise<void> {
+  if (!OUT_OF_STOCK_MODES.includes(mode as OutOfStockMode)) throw new UserError("Choose what the store does with out-of-stock products.");
+  await tx.get("update sites set out_of_stock = $2, updated_at = now() where id = $1 returning id", [siteId, mode], "site");
+}
 
 export async function setSiteKind(tx: Tx, siteId: string, kind: string): Promise<void> {
   if (!SITE_KINDS.includes(kind as SiteKind)) throw new UserError("Choose a landing page, portfolio or store.");
@@ -163,12 +180,14 @@ type Line = { productId: string; quantity: number; source: string; name: string 
 /**
  * Accept, reject, pack, ship, deliver or cancel an order this business
  * fulfils itself. Accepting takes stock (a store on `studio` inventory),
- * refusing if it is not there; cancelling an accepted order returns it.
+ * refusing if it is not there — or, for a store that sells out-of-stock
+ * products, taking what there is; cancelling an accepted order returns
+ * exactly what was taken (`orders.stock_taken`).
  */
 export async function advanceOrder(tenantId: string, orderId: string, to: OrderStatus, note = ""): Promise<void> {
   await withTenant(tenantId, async (tx) => {
-    const order = await tx.get<{ status: OrderStatus; sync_state: string; lines: Line[]; site_id: string | null }>(
-      "select status, sync_state, lines, site_id from orders where id = $1 for update",
+    const order = await tx.get<{ status: OrderStatus; sync_state: string; lines: Line[]; site_id: string | null; stock_taken: Record<string, number> | null }>(
+      "select status, sync_state, lines, site_id, stock_taken from orders where id = $1 for update",
       [orderId],
       "order",
     );
@@ -178,22 +197,44 @@ export async function advanceOrder(tenantId: string, orderId: string, to: OrderS
     const counts = inv?.kind === "store" && inv.inventory === "studio";
 
     if (counts && to === "confirmed") {
+      const beyond = inv !== null && sellsOutOfStock(inv);
+      const taken: Record<string, number> = {};
       for (const l of order.lines.filter((x) => x.source === "native")) {
+        if (beyond) {
+          // Take what is on the shelf, down to zero; the business sources the rest.
+          const row = await tx.one<{ took: number }>(
+            `with p as (select id, stock from products where id = $1 and stock is not null for update)
+             update products set stock = products.stock - least(p.stock, $2), in_stock = (products.stock - least(p.stock, $2)) > 0,
+                                 updated_at = now()
+               from p where products.id = p.id returning least(p.stock, $2) as took`,
+            [l.productId, l.quantity],
+          );
+          taken[l.productId] = (taken[l.productId] ?? 0) + Number(row?.took ?? 0);
+          continue;
+        }
         // Conditional: two acceptances at once cannot both take the last unit.
-        const taken = await tx.one(
+        const ok = await tx.one(
           `update products set stock = stock - $2, in_stock = (stock - $2) > 0, updated_at = now()
             where id = $1 and (stock is null or stock >= $2) returning id`,
           [l.productId, l.quantity],
         );
-        if (!taken) throw new UserError(`Not enough ${l.name} in stock to accept this order.`);
+        if (!ok) throw new UserError(`Not enough ${l.name} in stock to accept this order.`);
+        taken[l.productId] = (taken[l.productId] ?? 0) + l.quantity;
       }
+      await tx.query("update orders set stock_taken = $2 where id = $1", [orderId, JSON.stringify(taken)]);
     }
     const wasHolding = order.status === "confirmed" || order.status === "packed" || order.status === "shipped";
     if (counts && wasHolding && to === "cancelled") {
-      for (const l of order.lines.filter((x) => x.source === "native")) {
+      // Put back what accepting took; orders accepted before that was recorded took their full quantity.
+      const back: Record<string, number> = order.stock_taken ?? {};
+      if (!order.stock_taken) {
+        for (const l of order.lines.filter((x) => x.source === "native")) back[l.productId] = (back[l.productId] ?? 0) + l.quantity;
+      }
+      for (const [productId, quantity] of Object.entries(back)) {
+        if (quantity <= 0) continue;
         await tx.query(
           "update products set stock = stock + $2, in_stock = true, updated_at = now() where id = $1 and stock is not null",
-          [l.productId, l.quantity],
+          [productId, quantity],
         );
       }
     }

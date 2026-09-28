@@ -129,6 +129,24 @@ export default async function SettingsPage({ params }: { params: Promise<{ siteI
               <input type="radio" name="inventory" value="none" defaultChecked={inventory.inventory === "none"} className="mt-1" />
               <span className="text-sm"><strong className="text-slate-900">None</strong><br /><span className="text-slate-600">Products are added here but stock is not counted — nothing ever shows as sold out.</span></span>
             </label>
+            <fieldset className="space-y-2 border-t border-slate-100 pt-4">
+              <legend className="label">When a product is out of stock</legend>
+              {(
+                [
+                  ["show", "Show it, marked out of stock", "Customers see it but cannot order it."],
+                  ["hide", "Hide it", "It leaves the store until stock is back."],
+                  ["sell", "Keep selling it", "Customers can still order; it shows as made to order and you source it. Accepting takes whatever stock there is."],
+                ] as const
+              ).map(([value, title, body]) => (
+                <label key={value} className="flex gap-3 rounded-lg border border-slate-200 p-3 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50/50">
+                  <input type="radio" name="outOfStock" value={value} defaultChecked={inventory.out_of_stock === value} className="mt-1" />
+                  <span className="text-sm"><strong className="text-slate-900">{title}</strong><br /><span className="text-slate-600">{body}</span></span>
+                </label>
+              ))}
+              <p className="text-xs text-slate-500">
+                Does not apply when stock is not counted. With a data source, it can still refuse an order it cannot fill.
+              </p>
+            </fieldset>
             <SubmitButton pending="Saving…">Save</SubmitButton>
           </ActionForm>
         </Card>

@@ -12,6 +12,8 @@ export type ProductView = {
   inStock: boolean;
   stock: number | null;
   unitLabel: string | null;
+  /** The store takes orders beyond its stock, so out of stock still sells. */
+  backorders?: boolean;
 };
 
 export type RenderContext = {
