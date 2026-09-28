@@ -136,7 +136,7 @@ describe("hosts and subdomains", () => {
   it("parses platform, local and custom hosts", () => {
     expect(parseHost("acme.zuuvy.site", "zuuvy.site")).toEqual({ subdomain: "acme" });
     expect(parseHost("acme.localhost:3001", "zuuvy.site")).toEqual({ subdomain: "acme" });
-    expect(parseHost("www.acme.in", "zuuvy.site")).toEqual({ domain: "acme.in" });
+    expect(parseHost("www.acme.in", "zuuvy.site")).toEqual({ domain: "www.acme.in" });
     expect(parseHost("zuuvy.site", "zuuvy.site")).toBeNull();
     expect(parseHost("a.b.zuuvy.site", "zuuvy.site")).toBeNull();
   });
@@ -146,5 +146,46 @@ describe("hosts and subdomains", () => {
     expect(subdomainProblem("ab")).toMatch(/3/);
     expect(subdomainProblem("-acme")).not.toBeNull();
     expect(subdomainProblem("pooja-comm")).toBeNull();
+  });
+});
+
+describe("site data, brand kit and source files", async () => {
+  const { applyDataOps, diffData, parseData, overwrites, applyBrand, parseBrand, lockedThemeFields, treeToSource, sourceToTree, getTemplate: tpl } = await import("./index");
+
+  it("validates collections and applies ops with fresh ids", () => {
+    expect(() => parseData({ nonsense: [] })).toThrow(/no collection called nonsense/);
+    expect(() => parseData({ projects: [{ id: "a" }] })).toThrow(/title/);
+    const d = applyDataOps({}, [{ op: "addItem", collection: "projects", item: { id: "spoof", title: "One", year: "2024" } }]);
+    expect(d.projects![0]!.id).not.toBe("spoof");
+    expect(d.projects![0]!.year).toBe(2024);
+    expect(overwrites(d, { op: "updateItem", collection: "projects", id: d.projects![0]!.id, fields: { summary: "new" } })).toBe(false);
+    expect(overwrites(d, { op: "updateItem", collection: "projects", id: d.projects![0]!.id, fields: { title: "Two" } })).toBe(true);
+    const changes = diffData(d, applyDataOps(d, [{ op: "removeItem", collection: "projects", id: d.projects![0]!.id }]));
+    expect(changes).toEqual([{ collection: "projects", label: "Projects", added: [], removed: ["One"], changed: [] }]);
+  });
+
+  it("applies the brand kit over any tree", () => {
+    const tree = tpl("landing-launch").build({ businessName: "X" });
+    const brand = parseBrand({ colors: { primary: "#101010" }, motion: "none", logo: "https://x.test/l.png" });
+    const out = applyBrand(tree, brand);
+    expect(out.theme.colors.primary).toBe("#101010");
+    expect(out.theme.motion).toBe("none");
+    expect(out.nav.logo).toBe("https://x.test/l.png");
+    expect(lockedThemeFields(brand)).toEqual(["colors.primary", "motion"]);
+  });
+
+  it("round-trips a tree and its data through source files, inside a folder", () => {
+    const t = tpl("portfolio-studio");
+    const tree = t.build({ businessName: "Priya" });
+    const data = t.data!({ businessName: "Priya" });
+    const files = treeToSource(tree, { siteName: "Priya", kind: "portfolio", version: 3 }, data);
+    expect(Object.keys(files)).toEqual(expect.arrayContaining(["site/data/projects.json", "site/data/profile.json", "site/pages/01-home.json"]));
+    const nested = Object.fromEntries(Object.entries(files).map(([p, c]) => [`priya-v3/${p}`, c]));
+    const back = sourceToTree(nested);
+    expect(back.tree).toEqual(tree);
+    expect(back.data).toEqual(data);
+    expect(back.manifest.version).toBe(3);
+    const broken = { ...files, "site/pages/01-home.json": JSON.stringify({ ...tree.pages[0], path: "Not A Path" }) };
+    expect(() => sourceToTree(broken)).toThrow(/site\/pages\/01-home\.json/);
   });
 });

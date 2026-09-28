@@ -4,10 +4,78 @@
  * cannot produce a tree the runtime would refuse — an invalid call comes back
  * as a tool error in words it can correct ("hero props: heading: Required").
  */
-import { BLOCK_TYPES, type BlockType, FONTS, type Operation, type SiteTree, applyOps } from "@zsite/core";
+import {
+  BLOCK_TYPES,
+  type BlockType,
+  COLLECTION_KEYS,
+  type DataOp,
+  FONTS,
+  MOTIONS,
+  type Operation,
+  type SiteData,
+  type SiteTree,
+  applyDataOps,
+  applyOps,
+  describeDataOp,
+  overwrites,
+} from "@zsite/core";
 import { z } from "zod";
 
-export type EditState = { tree: SiteTree; operations: Operation[] };
+export type EditState = {
+  tree: SiteTree;
+  operations: Operation[];
+  images: number;
+  references: number;
+  data: SiteData;
+  dataOperations: DataOp[];
+  /** Changes to existing data the owner has to allow first. */
+  proposals: Proposal[];
+};
+
+export type Proposal = { op: DataOp; description: string };
+
+/** A picture made for this site; `url` is public https and usable in any image field. */
+export type GeneratedImage = { url: string; width: number; height: number };
+export type ImageAspect = "wide" | "landscape" | "square" | "portrait";
+export type ImageStyle = "photo" | "illustration" | "3d" | "flat";
+
+/** What a reference website looks like, reduced to what a designer would note. */
+export type ReferenceSummary = {
+  url: string;
+  title: string;
+  description: string;
+  headings: string[];
+  navigation: string[];
+  sections: string[];
+  colors: string[];
+  fonts: string[];
+  text: string;
+};
+
+/**
+ * What the agent may do beyond editing the tree. Each is supplied by the
+ * platform (object storage, Bedrock image models, a guarded fetch); absent
+ * means the tool is not offered at all, rather than offered and failing.
+ */
+export type ToolCapabilities = {
+  generateImage?: (req: { prompt: string; aspect: ImageAspect; style: ImageStyle }) => Promise<GeneratedImage>;
+  fetchReference?: (url: string) => Promise<ReferenceSummary>;
+  /**
+   * Theme fields the owner fixed in the brand kit (`colors.primary`, `fonts.body`,
+   * `motion`). set_theme keeps them and says so, rather than failing the call.
+   */
+  lockedTheme?: string[];
+  /** Colours to steer generated pictures toward (the brand palette). */
+  imagePalette?: string[];
+  /**
+   * Collections the owner has allowed the AI to change or remove existing
+   * entries in, for this request. Everywhere else such changes become proposals.
+   */
+  allowOverwrite?: string[];
+  /** Per edit, so one prompt cannot spend a month of image budget. */
+  maxImages?: number;
+  maxReferences?: number;
+};
 
 /**
  * A tool as the agent defines it, independent of any model provider. Each
@@ -18,7 +86,7 @@ export type SiteTool = {
   name: string;
   description: string;
   inputSchema: z.ZodType;
-  run: (input: unknown) => string;
+  run: (input: unknown) => string | Promise<string>;
 };
 
 /** Thrown for input the model got wrong; its message goes back to the model. */
@@ -30,7 +98,7 @@ function siteTool<S extends z.ZodType>(def: {
   name: string;
   description: string;
   inputSchema: S;
-  run: (input: z.infer<S>) => string;
+  run: (input: z.infer<S>) => string | Promise<string>;
 }): SiteTool {
   return {
     name: def.name,
@@ -65,8 +133,28 @@ export function outline(tree: SiteTree): string {
     .join("\n");
 }
 
-export function createSiteTools(initial: SiteTree) {
-  const state: EditState = { tree: initial, operations: [] };
+export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, initialData: SiteData = {}) {
+  const state: EditState = { tree: initial, operations: [], images: 0, references: 0, data: initialData, dataOperations: [], proposals: [] };
+  const allowed = new Set(caps.allowOverwrite ?? []);
+
+  /** Apply a data op now, or — when it changes what exists — keep it for the owner to allow. */
+  const dataOp = (op: DataOp): string => {
+    if (overwrites(state.data, op) && !allowed.has(op.collection)) {
+      applyDataOps(state.data, [op]); // validate now, so a proposal is always applicable
+      const description = describeDataOp(state.data, op);
+      state.proposals.push({ op, description });
+      return JSON.stringify({
+        ok: true,
+        proposed: true,
+        note: `Not applied: "${description}" changes the owner's existing data, so they will be asked first. Carry on with the rest; mention it in your summary.`,
+      });
+    }
+    state.data = applyDataOps(state.data, [op]);
+    state.dataOperations.push(op);
+    const items = state.data[op.collection] ?? [];
+    return JSON.stringify({ ok: true, id: op.op === "addItem" ? items.at(op.index ?? -1)?.id : undefined, count: items.length });
+  };
+  const collection = z.enum(COLLECTION_KEYS).describe("A data collection (see Data collections in the system prompt)");
 
   const apply = (op: Operation, result: (tree: SiteTree) => Record<string, unknown> = () => ({})) => {
     // applyOps throws OpError with a readable message; every provider adapter
@@ -152,8 +240,23 @@ export function createSiteTools(initial: SiteTree) {
           .optional(),
         fonts: z.object({ heading: z.enum(FONTS), body: z.enum(FONTS) }).partial().optional(),
         radius: z.enum(["none", "sm", "md", "lg", "full"]).optional(),
+        motion: z
+          .enum(MOTIONS)
+          .optional()
+          .describe("Animation: none (still), subtle (sections ease in, cards lift — the default), lively (bigger movement, drifting hero image)"),
       }),
-      run: (i) => apply({ op: "setTheme", theme: i }),
+      run: (i) => {
+        const locked = new Set(caps.lockedTheme ?? []);
+        const kept: string[] = [];
+        const theme = {
+          ...i,
+          colors: i.colors && Object.fromEntries(Object.entries(i.colors).filter(([k]) => !locked.has(`colors.${k}`) || !kept.push(`colors.${k}`))),
+          fonts: i.fonts && Object.fromEntries(Object.entries(i.fonts).filter(([k]) => !locked.has(`fonts.${k}`) || !kept.push(`fonts.${k}`))),
+          motion: i.motion && locked.has("motion") ? (kept.push("motion"), undefined) : i.motion,
+        };
+        const note = kept.length ? { kept: kept, note: `${kept.join(", ")} fixed by the owner's brand kit and left unchanged; design around them.` } : {};
+        return apply({ op: "setTheme", theme }, () => note);
+      },
     }),
     siteTool({
       name: "set_site_details",
@@ -178,6 +281,81 @@ export function createSiteTools(initial: SiteTree) {
       run: (i) => apply({ op: "setFooter", ...i }),
     }),
   ];
+
+  tools.push(
+    siteTool({
+      name: "view_data",
+      description: "Return the site's data collections (profile, projects, experience…) with entry ids, including changes made so far in this turn.",
+      inputSchema: z.object({ collection: collection.optional() }),
+      run: (i) => JSON.stringify(i.collection ? { [i.collection]: state.data[i.collection] ?? [] } : state.data),
+    }),
+    siteTool({
+      name: "add_entry",
+      description:
+        "Add an entry to a data collection (a project, a job, a skill…). For the profile (one record) this sets it. Fields must match the collection's fields. Shown wherever a collection section for it is on the site.",
+      inputSchema: z.object({ collection, item: z.record(z.string(), z.unknown()), index: z.number().int().min(0).optional() }),
+      run: (i) => dataOp({ op: "addItem", collection: i.collection, item: i.item, ...(i.index !== undefined ? { index: i.index } : {}) }),
+    }),
+    siteTool({
+      name: "update_entry",
+      description:
+        "Change fields of an existing entry (by id; the profile needs no id). Filling an empty field applies at once; changing a field that already has a value is kept as a proposal the owner must allow.",
+      inputSchema: z.object({ collection, id: z.string().optional(), fields: z.record(z.string(), z.unknown()) }),
+      run: (i) => dataOp({ op: "updateItem", collection: i.collection, id: i.id, fields: i.fields }),
+    }),
+    siteTool({
+      name: "remove_entry",
+      description: "Remove an entry. The owner is asked before anything is removed.",
+      inputSchema: z.object({ collection, id: z.string().optional() }),
+      run: (i) => dataOp({ op: "removeItem", collection: i.collection, id: i.id }),
+    }),
+    siteTool({
+      name: "move_entry",
+      description: "Move an entry to a position in its collection (0 = first).",
+      inputSchema: z.object({ collection, id: z.string(), index: z.number().int().min(0) }),
+      run: (i) => dataOp({ op: "moveItem", collection: i.collection, id: i.id, index: i.index }),
+    }),
+  );
+
+  if (caps.generateImage) {
+    const generate = caps.generateImage;
+    const max = caps.maxImages ?? 4;
+    tools.push(
+      siteTool({
+        name: "generate_image",
+        description: `Create a new picture (photo or illustration) for this site and get its URL, then put that URL in a hero, imageText or gallery image field. Use it when the site needs a picture and none was given. At most ${max} per request, so spend them on the pictures that matter most (the hero first). Describe the subject, setting, light and mood concretely; never ask for text, logos or real people's faces in the picture.`,
+        inputSchema: z.object({
+          prompt: z.string().min(10).max(900).describe("What the picture shows, concretely"),
+          aspect: z.enum(["wide", "landscape", "square", "portrait"]).default("landscape").describe("wide for a hero, landscape for image+text, square for galleries"),
+          style: z.enum(["photo", "illustration", "3d", "flat"]).default("photo"),
+        }),
+        run: async (i) => {
+          if (state.images >= max) throw new ToolInputError(`The limit of ${max} new pictures for this request is reached. Reuse one of the URLs you already have.`);
+          state.images++;
+          const palette = caps.imagePalette?.length ? ` Colour palette: ${caps.imagePalette.join(", ")}.` : "";
+          const image = await generate({ prompt: `${i.prompt}${palette}`, aspect: i.aspect, style: i.style });
+          return JSON.stringify({ ok: true, ...image });
+        },
+      }),
+    );
+  }
+
+  if (caps.fetchReference) {
+    const fetchRef = caps.fetchReference;
+    const max = caps.maxReferences ?? 3;
+    tools.push(
+      siteTool({
+        name: "fetch_reference",
+        description: `Look at a website the user pointed to as a reference: returns its title, headings, navigation, section outline, colours, fonts and some text. Use it when the request names a URL. Take structure, tone and palette as inspiration; never copy its text word for word, and never use its images or brand name. At most ${max} per request.`,
+        inputSchema: z.object({ url: z.string().url().describe("The full http(s) address") }),
+        run: async (i) => {
+          if (state.references >= max) throw new ToolInputError(`The limit of ${max} reference sites for this request is reached.`);
+          state.references++;
+          return JSON.stringify(await fetchRef(i.url));
+        },
+      }),
+    );
+  }
 
   return { tools, state };
 }

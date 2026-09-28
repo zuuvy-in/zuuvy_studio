@@ -1,7 +1,7 @@
 import "server-only";
-import { type Session, getSession } from "@zsite/platform";
+import { type PlatformRole, type Session, getSession, platformRole } from "@zsite/platform";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 
 export const SESSION_COOKIE = "zs_session";
@@ -30,4 +30,12 @@ export async function setSessionCookie(token: string, expires: Date) {
     path: "/",
     expires,
   });
+}
+
+/** The internal dashboard: a platform admin, or a 404 — its existence is not advertised. */
+export async function requirePlatformAdmin(): Promise<Session & { platformRole: PlatformRole }> {
+  const session = await requireSession();
+  const role = await platformRole(session.user.id);
+  if (!role) notFound();
+  return { ...session, platformRole: role };
 }

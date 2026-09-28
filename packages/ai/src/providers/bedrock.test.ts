@@ -99,4 +99,26 @@ describe("bedrock provider (Converse loop)", () => {
     expect(err).toBeInstanceOf(AgentError);
     expect(err.message).toMatch(/refused access to apac\.amazon\.nova-pro-v1:0 in ap-south-1/);
   });
+
+  const failing = (name: string, message: string) => ({
+    async send(): Promise<ConverseCommandOutput> {
+      throw Object.assign(new Error(message), { name });
+    },
+  });
+
+  it("says an account-level block is not the model id's fault", async () => {
+    const client = failing("ValidationException", "Operation not allowed");
+    const err = await editSite({ tree: tree(), prompt: "x", context, runner: bedrockProvider({ client, region: "ap-south-1" }) }).catch((e) => e);
+    expect(err).toBeInstanceOf(AgentError);
+    expect(err.message).toMatch(/has not allowed this account/);
+    expect(err.message).toMatch(/Support case/);
+    expect(err.message).not.toMatch(/inference profile/);
+  });
+
+  it("suggests an inference profile only for a bare model id", async () => {
+    const run = (model: string) =>
+      editSite({ tree: tree(), prompt: "x", context, model, runner: bedrockProvider({ client: failing("ValidationException", "Invocation of model ID amazon.nova-pro-v1:0 with on-demand throughput isn't supported."), region: "ap-south-1" }) }).catch((e) => e);
+    expect((await run("amazon.nova-pro-v1:0")).message).toMatch(/inference profile id \(e\.g\. "apac\.amazon\.nova-pro-v1:0"\)/);
+    expect((await run("apac.amazon.nova-pro-v1:0")).message).not.toMatch(/inference profile/);
+  });
 });

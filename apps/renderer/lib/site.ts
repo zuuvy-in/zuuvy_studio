@@ -54,6 +54,7 @@ export async function liveContext(current: Current): Promise<RenderContext> {
     mode: "live",
     href: linkRewriter(""),
     products: products.map(toView),
+    data: current.site.data,
     productHref: (id) => `/p/${id}`,
   };
 }

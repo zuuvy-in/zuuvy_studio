@@ -27,7 +27,7 @@ export type Product = {
   updated_at: Date;
 };
 
-const PRODUCT_COLUMNS = `id, source, external_id, name, description, category, price, mrp, currency, unit_label,
+export const PRODUCT_COLUMNS = `id, source, external_id, name, description, category, price, mrp, currency, unit_label,
   images, in_stock, stock, active, synced_at, updated_at`;
 
 export async function upsertProduct(tx: Tx, source: "zuuvy", item: CatalogItem): Promise<void> {
@@ -52,7 +52,14 @@ export async function hideProduct(tx: Tx, source: "zuuvy", externalId: string): 
   );
 }
 
-export type ProductQuery = { category?: string | null; limit?: number; sort?: "name" | "price_asc" | "price_desc" | "newest"; q?: string };
+export type ProductQuery = {
+  category?: string | null;
+  limit?: number;
+  sort?: "name" | "price_asc" | "price_desc" | "newest";
+  q?: string;
+  /** Only products from these sources — a store shows the catalogue its inventory setting names. */
+  sources?: string[];
+};
 
 /** What a storefront may show: active products with a price. */
 export async function storefrontProducts(tx: Tx, query: ProductQuery = {}): Promise<Product[]> {
@@ -67,6 +74,10 @@ export async function storefrontProducts(tx: Tx, query: ProductQuery = {}): Prom
   if (query.category) {
     params.push(query.category);
     where += ` and lower(category) = lower($${params.length})`;
+  }
+  if (query.sources) {
+    params.push(query.sources);
+    where += ` and source = any($${params.length}::text[])`;
   }
   params.push(Math.min(query.limit ?? 48, 200));
   return tx.query<Product>(`select ${PRODUCT_COLUMNS} from products where ${where} order by ${order} limit $${params.length}`, params);

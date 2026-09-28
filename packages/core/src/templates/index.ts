@@ -3,6 +3,7 @@
  * business to a complete site tree — the marketplace's templates will be the
  * same thing, stored as data with `{{businessName}}`-style slots.
  */
+import { type SiteData, parseData } from "../data";
 import { SCHEMA_VERSION, type SiteTree, newId, parseTree } from "../tree";
 
 export type SiteKind = "landing" | "portfolio" | "store";
@@ -20,6 +21,8 @@ export type Template = {
   kind: SiteKind;
   description: string;
   build: (input: TemplateInput) => SiteTree;
+  /** Starting data for the site's collections (a portfolio's profile and sample entries). */
+  data?: (input: TemplateInput) => SiteData;
 };
 
 const year = () => new Date().getFullYear();
@@ -259,20 +262,10 @@ const portfolio: Template = {
               type: "hero",
               props: { heading: tagline ?? `${businessName} — design & build`, align: "left" },
             },
-            {
-              id: "work",
-              type: "gallery",
-              props: {
-                heading: "Selected work",
-                columns: 2,
-                items: [
-                  { title: "Project one", caption: "What it was and what you did" },
-                  { title: "Project two", caption: "What it was and what you did" },
-                  { title: "Project three", caption: "What it was and what you did" },
-                  { title: "Project four", caption: "What it was and what you did" },
-                ],
-              },
-            },
+            { id: newId("s"), type: "collection", props: { collection: "profile", layout: "about" } },
+            { id: "work", type: "collection", props: { collection: "projects", heading: "Selected work", layout: "cards" } },
+            { id: newId("s"), type: "collection", props: { collection: "services", heading: "What I do" } },
+            { id: newId("s"), type: "collection", props: { collection: "testimonials", heading: "Kind words" } },
             {
               id: "contact",
               type: "cta",
@@ -288,13 +281,31 @@ const portfolio: Template = {
           path: "/about",
           title: "About",
           sections: [
-            {
-              id: newId("s"),
-              type: "imageText",
-              props: { heading: "About", body: "A short story about you and how you work.", imageSide: "left" },
-            },
+            { id: newId("s"), type: "collection", props: { collection: "profile", layout: "about" } },
+            { id: newId("s"), type: "collection", props: { collection: "experience", heading: "Experience" } },
+            { id: newId("s"), type: "collection", props: { collection: "education", heading: "Education" } },
+            { id: newId("s"), type: "collection", props: { collection: "skills", heading: "Skills & tools" } },
+            { id: newId("s"), type: "collection", props: { collection: "awards", heading: "Recognition" } },
           ],
         },
+      ],
+    }),
+  data: ({ businessName, tagline, email }) =>
+    parseData({
+      profile: [{ name: businessName, headline: tagline ?? "Designer and maker", bio: "A short story about you, what you make and how you work.", ...(email ? { email } : {}) }],
+      projects: [
+        { id: "p1", title: "Project one", summary: "What it was, and what you did", tags: ["Brand", "Web"] },
+        { id: "p2", title: "Project two", summary: "What it was, and what you did", tags: ["Product"] },
+        { id: "p3", title: "Project three", summary: "What it was, and what you did", tags: ["Campaign"] },
+      ],
+      services: [
+        { id: "s1", title: "Brand identity", description: "Logo, colours and type that fit the business." },
+        { id: "s2", title: "Websites", description: "Fast, clear sites that bring enquiries." },
+      ],
+      skills: [
+        { id: "k1", name: "Design" },
+        { id: "k2", name: "Illustration" },
+        { id: "k3", name: "Web" },
       ],
     }),
 };

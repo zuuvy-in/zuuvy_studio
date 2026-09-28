@@ -114,6 +114,17 @@ export class ServicesStack extends Stack {
       ZUUVY_API_URL: cfg.zuuvyApiUrl,
       ZSITE_ALLOW_CUSTOM_ZUUVY_URL: "0",
       ...(cfg.aiModel ? { ZSITE_AI_MODEL: cfg.aiModel } : {}),
+      // Pictures: the media library bucket, and the Bedrock image model.
+      ASSETS_BUCKET: base.assets.bucketName,
+      ASSETS_REGION: this.region,
+      ZSITE_IMAGE_MODEL: cfg.imageModel,
+      ZSITE_IMAGE_REGION: cfg.imageRegion,
+      // Email through SES from the platform domain.
+      EMAIL_ENABLED: cfg.emailEnabled ? "1" : "0",
+      EMAIL_DOMAIN: cfg.domain,
+      SES_REGION: this.region,
+      // Custom domains CNAME here; the platform's `*` record already points it at the balancer.
+      CUSTOM_DOMAIN_TARGET: `domains.${cfg.domain}`,
     };
     const secrets = {
       DB_APP_PASSWORD: ecs.Secret.fromSecretsManager(base.appDbSecret, "password"),
@@ -130,6 +141,18 @@ export class ServicesStack extends Stack {
       ],
     });
 
+    // The media library: writing and reading pictures (reading for exports).
+    const assetsRw = new iam.PolicyStatement({
+      actions: ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      resources: [base.assets.arnForObjects("t/*")],
+    });
+    // Email, only from the two addresses the platform sends as.
+    const sendEmail = new iam.PolicyStatement({
+      actions: ["ses:SendEmail", "ses:SendRawEmail"],
+      resources: [`arn:aws:ses:${this.region}:${this.account}:identity/${cfg.domain}`, `arn:aws:ses:${this.region}:${this.account}:configuration-set/*`],
+      conditions: { StringEquals: { "ses:FromAddress": [`no-reply@${cfg.domain}`, `alerts@${cfg.domain}`] } },
+    });
+
     const nextImage = (app: "studio" | "renderer") =>
       ecs.ContainerImage.fromAsset(REPO_ROOT, {
         file: "infra/docker/next.Dockerfile",
@@ -141,10 +164,11 @@ export class ServicesStack extends Stack {
     const service = (
       name: string,
       image: ecs.ContainerImage,
-      opts: { cpu: number; memory: number; count: number; port?: number; command?: string[]; bedrock?: boolean },
+      opts: { cpu: number; memory: number; count: number; port?: number; command?: string[]; bedrock?: boolean; policies?: iam.PolicyStatement[] },
     ) => {
       const task = new ecs.FargateTaskDefinition(this, `${name}Task`, { cpu: opts.cpu, memoryLimitMiB: opts.memory });
       if (opts.bedrock) task.addToTaskRolePolicy(bedrock);
+      for (const p of opts.policies ?? []) task.addToTaskRolePolicy(p);
       task.addContainer(name, {
         image,
         command: opts.command,
@@ -169,9 +193,23 @@ export class ServicesStack extends Stack {
       });
     };
 
-    const studio = service("Studio", nextImage("studio"), { cpu: 512, memory: 1024, count: 1, port: 3000, bedrock: true });
+    // Custom domains: the worker requests certificates and hangs them on the
+    // HTTPS listener. Filled in below once the listener exists (domain mode only).
+    const domainCerts = new iam.PolicyStatement({
+      actions: ["acm:RequestCertificate", "acm:DescribeCertificate", "acm:DeleteCertificate", "acm:AddTagsToCertificate"],
+      resources: ["*"],
+    });
+
+    const studio = service("Studio", nextImage("studio"), { cpu: 512, memory: 1024, count: 1, port: 3000, bedrock: true, policies: [assetsRw, sendEmail] });
     const renderer = service("Renderer", nextImage("renderer"), { cpu: 512, memory: 1024, count: 2, port: 3000 });
-    service("Worker", base.toolsImage, { cpu: 256, memory: 512, count: 1, command: ["npx", "tsx", "scripts/worker.ts"], bedrock: true });
+    const worker = service("Worker", base.toolsImage, {
+      cpu: 256,
+      memory: 512,
+      count: 1,
+      command: ["npx", "tsx", "scripts/worker.ts"],
+      bedrock: true,
+      policies: [assetsRw, sendEmail, domainCerts],
+    });
 
     const healthCheck: elbv2.HealthCheck = { path: "/api/health", healthyHttpCodes: "200", interval: Duration.seconds(20) };
     const rendererTg = new elbv2.ApplicationTargetGroup(this, "RendererTg", {
@@ -218,6 +256,15 @@ export class ServicesStack extends Stack {
         sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS,
         defaultAction: elbv2.ListenerAction.forward([rendererTg]),
       });
+      // The worker attaches each custom domain's certificate to this listener (SNI).
+      worker.taskDefinition.addToTaskRolePolicy(
+        new iam.PolicyStatement({
+          actions: ["elasticloadbalancing:AddListenerCertificates", "elasticloadbalancing:RemoveListenerCertificates"],
+          resources: [https.listenerArn],
+        }),
+      );
+      worker.taskDefinition.defaultContainer?.addEnvironment("ZSITE_DOMAIN_LISTENER_ARN", https.listenerArn);
+      studio.taskDefinition.defaultContainer?.addEnvironment("ZSITE_DOMAIN_LISTENER_ARN", https.listenerArn);
       https.addAction("Studio", {
         priority: 10,
         conditions: [elbv2.ListenerCondition.hostHeaders([cfg.studioHost])],

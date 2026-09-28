@@ -12,6 +12,7 @@ npm run db:start && npm run db:migrate && npm run db:seed
 npm run dev          # studio :3000, renderer :3001 (<sub>.localhost), worker, mock Zuuvy :4010
 npm test             # vitest; platform tests create a throwaway DB per file on :54329
 npm run typecheck
+npm run admin:create   # platform superadmin (rishav@zuuvy.in by default)
 ```
 
 ## Things that will bite you
@@ -43,3 +44,18 @@ npm run typecheck
   thrown tool errors to the model rather than fail the turn.
 - **Next 16**: `params`/`searchParams`/`cookies()`/`headers()` are async;
   `next dev` writes `AGENTS.md`/`CLAUDE.md` into each app — keep them.
+- **Data is part of a version** (`site_versions.data`, `core/src/data.ts`),
+  never a live table. `createVersion` carries the parent's data forward when
+  none is given; anything that changes data passes the new data explicitly.
+- **The AI never overwrites the owner's data or brand silently.** Data
+  overwrites become `ai_meta.proposals`; brand-fixed theme fields are dropped
+  in `set_theme` and re-applied by `applyBrand` after every AI edit.
+- **A URL the server fetches is an SSRF door** — `references.ts` is the only
+  place that does it for user input: public addresses only, DNS pinned into
+  the socket, redirects re-checked. Do not add a second fetcher.
+- **Deleting a site requires a fresh export** (`archive.deletionCheck`).
+- **Platform admins are rows the app cannot write**; changes go through
+  `grant_platform_admin`/`revoke_platform_admin`, which check the caller is a
+  superadmin in the database.
+- **Email is an outbox job** (`email.send`), queued in the transaction that
+  caused it; `EMAIL_ENABLED=1` or it is only logged.

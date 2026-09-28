@@ -42,6 +42,7 @@ export const BLOCK_LABELS: Record<Section["type"], string> = {
   faq: "FAQ",
   cta: "Call to action",
   contact: "Contact",
+  collection: "Collection",
 };
 
 /**

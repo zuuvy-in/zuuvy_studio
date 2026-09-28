@@ -8,8 +8,12 @@ import { CfnOutput, Duration, IgnoreMode, RemovalPolicy, Stack, type StackProps 
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecrAssets from "aws-cdk-lib/aws-ecr-assets";
 import * as ecs from "aws-cdk-lib/aws-ecs";
+import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as rds from "aws-cdk-lib/aws-rds";
+import * as route53 from "aws-cdk-lib/aws-route53";
+import * as s3 from "aws-cdk-lib/aws-s3";
+import * as ses from "aws-cdk-lib/aws-ses";
 import * as secrets from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
 import type { DeployConfig } from "./config";
@@ -26,6 +30,8 @@ export class BaseStack extends Stack {
   readonly appSecrets: secrets.Secret;
   readonly cluster: ecs.Cluster;
   readonly toolsImage: ecs.ContainerImage;
+  readonly assets: s3.Bucket;
+  readonly emailIdentity: ses.EmailIdentity;
 
   /** Fixed rather than looked up, so synthesis needs no AWS credentials. */
   override get availabilityZones(): string[] {
@@ -137,6 +143,50 @@ export class BaseStack extends Stack {
         DB_APP_PASSWORD: ecs.Secret.fromSecretsManager(this.appDbSecret, "password"),
       },
     });
+
+    // Pictures for the media library. Objects under t/<tenant>/ are public
+    // (a website's images are), keys are unique per upload so a cached URL
+    // never shows different bytes, and the bucket outlives the stack.
+    this.assets = new s3.Bucket(this, "Assets", {
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      blockPublicAccess: new s3.BlockPublicAccess({
+        blockPublicAcls: true,
+        ignorePublicAcls: true,
+        blockPublicPolicy: false,
+        restrictPublicBuckets: false,
+      }),
+      objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED,
+      cors: [{ allowedMethods: [s3.HttpMethods.GET], allowedOrigins: ["*"], maxAge: 86400 }],
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+    this.assets.addToResourcePolicy(
+      new iam.PolicyStatement({
+        actions: ["s3:GetObject"],
+        principals: [new iam.AnyPrincipal()],
+        resources: [this.assets.arnForObjects("t/*")],
+      }),
+    );
+
+    // Email from the platform domain (alerts@, no-reply@). With DNS in Route 53
+    // the DKIM and MAIL FROM records are written here; with DNS at the
+    // registrar they are printed as outputs to add there by hand.
+    const zone =
+      cfg.domainReady && cfg.dnsProvider === "route53" && cfg.hostedZoneId
+        ? route53.HostedZone.fromHostedZoneAttributes(this, "Zone", { hostedZoneId: cfg.hostedZoneId, zoneName: cfg.domain })
+        : undefined;
+    this.emailIdentity = new ses.EmailIdentity(this, "EmailDomain", {
+      identity: zone ? ses.Identity.publicHostedZone(zone) : ses.Identity.domain(cfg.domain),
+      mailFromDomain: `mail.${cfg.domain}`,
+    });
+    if (!zone) {
+      this.emailIdentity.dkimRecords.forEach((r, i) => {
+        new CfnOutput(this, `EmailDkim${i + 1}`, { value: `CNAME ${r.name} -> ${r.value}`, description: "Add at the registrar for SES DKIM" });
+      });
+      new CfnOutput(this, "EmailMailFromMx", { value: `MX mail.${cfg.domain} -> 10 feedback-smtp.${this.region}.amazonses.com` });
+      new CfnOutput(this, "EmailMailFromSpf", { value: `TXT mail.${cfg.domain} -> "v=spf1 include:amazonses.com ~all"` });
+      new CfnOutput(this, "EmailDmarc", { value: `TXT _dmarc.${cfg.domain} -> "v=DMARC1; p=none; rua=mailto:dmarc@${cfg.domain}"` });
+    }
 
     // What the pipeline needs to run the migration task.
     new CfnOutput(this, "ClusterName", { value: this.cluster.clusterName });

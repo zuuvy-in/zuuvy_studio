@@ -71,7 +71,15 @@ export const Theme = z.object({
     body: z.enum(FONTS),
   }),
   radius: z.enum(["none", "sm", "md", "lg", "full"]),
+  /**
+   * How much the page moves: sections easing in as they scroll into view,
+   * the hero arriving, cards lifting under the pointer. Optional so trees
+   * saved before it existed stay byte-identical; absent reads as "subtle".
+   * Visitors who ask their device for reduced motion get none, whatever this says.
+   */
+  motion: z.enum(["none", "subtle", "lively"]).optional(),
 });
+export const MOTIONS = ["none", "subtle", "lively"] as const;
 export type Theme = z.infer<typeof Theme>;
 
 export const Link = z.object({ label: Text(60), href: Href });
@@ -82,6 +90,12 @@ export type Link = z.infer<typeof Link>;
 // the descriptions below are read by the model — keep them about *what the
 // block is for*, not how it is drawn.
 // ---------------------------------------------------------------------------
+
+/** The data collections a `collection` section can show (defined in data.ts). */
+export const DATA_COLLECTION_KEYS = [
+  "profile", "projects", "experience", "education", "skills", "services",
+  "testimonials", "awards", "publications", "clients", "gallery",
+] as const;
 
 export const BLOCKS = {
   hero: z.object({
@@ -164,6 +178,16 @@ export const BLOCKS = {
     body: Text(400).optional(),
     button: Link,
   }),
+  collection: z.object({
+    collection: z.enum(DATA_COLLECTION_KEYS).describe("Which data collection this section shows; its entries are edited as data, not here"),
+    heading: Text(140).optional(),
+    subheading: Text(400).optional(),
+    layout: z
+      .enum(["cards", "grid", "list", "timeline", "chips", "about"])
+      .optional()
+      .describe("cards/grid for projects, clients, gallery; timeline for experience, education; chips for skills; about for the profile; list for awards, publications"),
+    limit: z.number().int().min(1).max(60).optional(),
+  }),
   contact: z.object({
     heading: Text(140),
     body: Text(600).optional(),
@@ -194,6 +218,7 @@ export const Section = z.discriminatedUnion("type", [
   sectionOf("faq"),
   sectionOf("cta"),
   sectionOf("contact"),
+  sectionOf("collection"),
 ]);
 export type Section = z.infer<typeof Section>;
 
@@ -220,6 +245,8 @@ export const SiteTree = z
     theme: Theme,
     nav: z.object({
       brand: Text(60),
+      /** The business's logo, drawn beside the brand name. Set from the brand kit, never by the AI. */
+      logo: ImageUrl.optional(),
       links: z.array(Link).max(8),
       cta: Link.optional(),
     }),

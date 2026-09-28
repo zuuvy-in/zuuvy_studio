@@ -1,4 +1,4 @@
-import { getSite, listPublications, listVersions, withTenant } from "@zsite/platform";
+import { ATTACHMENT_ACCEPT, getSite, listPublications, listVersions, withTenant } from "@zsite/platform";
 import Link from "next/link";
 import { SourceBadge } from "@/components/badges";
 import { ActionForm, SubmitButton } from "@/components/forms";
@@ -7,7 +7,7 @@ import { Badge, ButtonLink, Card, CardHeader, Icon } from "@/components/ui";
 import { ago, dateTime } from "@/lib/format";
 import { aiStatus } from "@/lib/ai";
 import { requireSession } from "@/lib/session";
-import { generateAction, publishAction } from "../../actions";
+import { generateAction, importRevisionAction, publishAction } from "../../actions";
 
 export const metadata = { title: "Versions" };
 
@@ -25,7 +25,7 @@ export default async function VersionsPage({ params }: { params: Promise<{ siteI
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div className="min-w-0 space-y-6">
-        <Composer action={generateAction} siteId={site.id} baseNumber={latest.number} aiReady={ai.ready} setupHint={ai.hint} />
+        <Composer action={generateAction} siteId={site.id} baseNumber={latest.number} aiReady={ai.ready} setupHint={ai.hint} accept={ATTACHMENT_ACCEPT} />
 
         <Card>
           <CardHeader title="All versions" description="Every change is kept. Open one to preview it, see what changed, publish it or bring it back." />
@@ -85,9 +85,21 @@ export default async function VersionsPage({ params }: { params: Promise<{ siteI
             ))}
           </ol>
         </Card>
-        <Card className="p-5 text-sm">
-          <p className="flex items-center gap-2 font-medium text-slate-900"><Icon name="code" className="text-slate-500" /> Prefer code?</p>
-          <p className="mt-1 text-slate-500">Ejecting to Git and importing a codebase back as a version is on the way. Your versions history carries over.</p>
+        <Card>
+          <CardHeader title={<span className="flex items-center gap-2"><Icon name="code" className="text-slate-500" /> Edit the source</span>} description="Every version exports as editable files: pages, theme and content as plain JSON." />
+          <div className="space-y-3 p-5 text-sm">
+            <ol className="list-decimal space-y-1 pl-5 text-slate-600">
+              <li>Open a version and choose <strong>Export source</strong>.</li>
+              <li>Edit the files in any editor (the README inside explains them).</li>
+              <li>Zip the folder and import it here — it is checked in full and saved as a new version.</li>
+            </ol>
+            <ActionForm action={importRevisionAction} className="space-y-2">
+              <input type="hidden" name="siteId" value={site.id} />
+              <input type="file" name="archive" accept=".zip,application/zip" required className="block w-full text-sm" />
+              <SubmitButton size="sm" variant="secondary" pending="Importing…"><Icon name="upload" /> Import a revision</SubmitButton>
+            </ActionForm>
+            <p className="text-xs text-slate-500">Or connect GitHub under Settings: each version becomes a branch, and publishing merges it into main.</p>
+          </div>
         </Card>
       </aside>
     </div>

@@ -8,9 +8,15 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-acm": "^3.1141.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1141.0",
+    "@aws-sdk/client-elastic-load-balancing-v2": "^3.1141.0",
+    "@aws-sdk/client-s3": "^3.1141.0",
+    "@aws-sdk/client-sesv2": "^3.1141.0",
     "@zsite/ai": "*",
     "@zsite/connectors": "*",
     "@zsite/core": "*",
+    "fflate": "^0.8.3",
     "pg": "^8.23.0"
   }
 }

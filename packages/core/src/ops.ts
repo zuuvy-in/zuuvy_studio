@@ -28,6 +28,7 @@ const DeepPartialTheme = z.object({
   colors: Theme.shape.colors.partial().optional(),
   fonts: Theme.shape.fonts.partial().optional(),
   radius: Theme.shape.radius.optional(),
+  motion: Theme.shape.motion,
 });
 
 export const Operation = z.discriminatedUnion("op", [
@@ -116,6 +117,7 @@ function applyOne(tree: SiteTree, raw: Operation): void {
         colors: { ...tree.theme.colors, ...op.theme.colors },
         fonts: { ...tree.theme.fonts, ...op.theme.fonts },
         radius: op.theme.radius ?? tree.theme.radius,
+        ...((op.theme.motion ?? tree.theme.motion) ? { motion: op.theme.motion ?? tree.theme.motion } : {}),
       };
       return;
     case "setMeta":

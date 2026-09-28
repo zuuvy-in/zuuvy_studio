@@ -4,19 +4,27 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon, type IconName, cx } from "./ui";
 
-const ITEMS: { href: string; label: string; icon: IconName; exact?: boolean }[] = [
+type Item = { href: string; label: string; icon: IconName; exact?: boolean; when?: "commerce" | "admin" };
+
+const ITEMS: Item[] = [
   { href: "/", label: "Overview", icon: "home", exact: true },
   { href: "/sites", label: "Sites", icon: "globe" },
+  { href: "/media", label: "Media", icon: "image" },
   { href: "/integrations", label: "Integrations", icon: "plug" },
-  { href: "/products", label: "Products", icon: "box" },
-  { href: "/orders", label: "Orders", icon: "cart" },
+  // Only a business with a store has anything to sell or deliver.
+  { href: "/products", label: "Products", icon: "box", when: "commerce" },
+  { href: "/orders", label: "Orders", icon: "cart", when: "commerce" },
+  { href: "/usage", label: "AI usage", icon: "sparkles" },
+  { href: "/settings", label: "Settings", icon: "settings" },
+  { href: "/admin", label: "Platform admin", icon: "shield", when: "admin" },
 ];
 
-export function SidebarNav() {
+export function SidebarNav({ commerce = false, admin = false }: { commerce?: boolean; admin?: boolean }) {
   const path = usePathname();
+  const items = ITEMS.filter((i) => !i.when || (i.when === "commerce" ? commerce : admin));
   return (
     <nav className="flex gap-1 overflow-x-auto md:flex-col" aria-label="Main">
-      {ITEMS.map((item) => {
+      {items.map((item) => {
         const active = item.exact ? path === item.href : path === item.href || path.startsWith(`${item.href}/`);
         return (
           <Link

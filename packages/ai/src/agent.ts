@@ -10,13 +10,13 @@
  *   anthropic Claude via Anthropic's API
  * The prompt, the tools and every validation rule are the same for both.
  */
-import { BLOCKS, type Operation, type SiteTree } from "@zsite/core";
+import { BLOCKS, COLLECTIONS, type DataOp, type Operation, type SiteData, type SiteTree } from "@zsite/core";
 import { z } from "zod";
 import { AgentError } from "./errors";
 import { anthropicProvider } from "./providers/anthropic";
 import { type BedrockOptions, bedrockProvider } from "./providers/bedrock";
-import type { Provider, Usage } from "./providers/types";
-import { createSiteTools, outline } from "./tools";
+import type { Attachment, Provider, Usage } from "./providers/types";
+import { type Proposal, type ToolCapabilities, createSiteTools, outline } from "./tools";
 
 export type SiteContext = {
   businessName: string;
@@ -25,6 +25,8 @@ export type SiteContext = {
   categories: { category: string; count: number }[];
   productCount: number;
   catalogueSource: string | null;
+  /** The business's media library: pictures the AI may place without generating new ones. */
+  media?: { url: string; alt: string; kind: "upload" | "generated" }[];
 };
 
 export type EditResult = {
@@ -34,6 +36,13 @@ export type EditResult = {
   model: string;
   provider: ProviderName;
   usage: Usage;
+  /** Pictures generated during this edit. */
+  images: number;
+  /** The site's data after the edit (only changes that needed no permission). */
+  data: SiteData;
+  dataOperations: DataOp[];
+  /** Changes to existing data held back for the owner to allow. */
+  proposals: Proposal[];
   stopReason: string | null;
 };
 
@@ -47,6 +56,15 @@ export const DEFAULT_MODELS: Record<ProviderName, string> = {
   bedrock: "apac.amazon.nova-pro-v1:0",
   anthropic: "claude-opus-5",
 };
+
+function collectionReference(): string {
+  return COLLECTIONS.map(
+    (c) =>
+      `### ${c.key}${c.single ? " (one record)" : ""}\n${c.description}\nFields: ${c.fields
+        .map((f) => `${f.key} (${f.kind}${f.required ? ", required" : ""})`)
+        .join(", ")}`,
+  ).join("\n\n");
+}
 
 function blockReference(): string {
   return Object.entries(BLOCKS)
@@ -62,7 +80,11 @@ How a site is built:
 - Refer to pages by path ("/", "/about") or id, and to sections by id. Ids of things you add come back in the tool result.
 - Product grids fill themselves from the connected catalogue. Never type products, prices or stock into other blocks; to feature a category, set a productGrid's \`category\` to one of the catalogue's categories exactly as given.
 - Links are "/path", "/#section-id", https://, mailto: or tel:. Anchor links point at section ids.
-- Images must be https URLs the user gave you. Otherwise leave image fields out; the site shows a tasteful placeholder.
+- Images must be https URLs: ones the user gave you, ones from the media library listed with the request, or ones generate_image returned. Prefer the business's own uploaded pictures for its products, premises and people. If generate_image is available and the request asks for pictures, illustrations or a more visual site, generate them; otherwise leave image fields out and the site shows a tasteful placeholder. Never invent an image URL.
+- Structured content lives in data collections (profile, projects, experience, education, skills, services, testimonials, awards, publications, clients, gallery), not in section props. A "collection" section shows one of them. Portfolios in particular should be built this way: put the facts in the data, then show them with collection sections. Use the data tools (view_data, add_entry, update_entry, remove_entry, move_entry).
+- The owner's data is theirs. Adding entries and filling empty fields is fine. Changing a value that is already there, removing an entry, or replacing the profile is held for the owner's permission automatically — do not try to get round it; say in your summary what you proposed. Never invent facts for the data (employers, clients, dates, awards, quotes); use what the owner gave you, attached files included.
+- Motion is a theme setting (set_theme motion: none, subtle or lively). Use it when the request asks for animation or a livelier feel.
+- When the request names a website as a reference and fetch_reference is available, look at it first, then build in that spirit for this business: its structure, tone and palette, never its words, images or name.
 
 How to work:
 - Do what was asked, completely, and nothing unrelated. Keep what the user did not ask to change.
@@ -72,7 +94,11 @@ How to work:
 
 ## Blocks
 
-${blockReference()}`;
+${blockReference()}
+
+## Data collections
+
+${collectionReference()}`;
 
 export type EditOptions = {
   tree: SiteTree;
@@ -84,6 +110,14 @@ export type EditOptions = {
   /** Supply a ready provider (tests); otherwise one is built from `provider`. */
   runner?: Provider;
   bedrock?: BedrockOptions;
+  /** Files attached to the request (brief, price list, screenshots), read by the model. */
+  attachments?: Attachment[];
+  /** Plain-language brand kit brief (see @zsite/core brandBrief). */
+  brand?: string;
+  /** Image generation and reference fetching, when the platform provides them. */
+  capabilities?: ToolCapabilities;
+  /** The base version's data collections. */
+  data?: SiteData;
 };
 
 export function resolveProvider(name: string | undefined): ProviderName {
@@ -94,7 +128,7 @@ export async function editSite(opts: EditOptions): Promise<EditResult> {
   const provider = opts.provider ?? resolveProvider(process.env.ZSITE_AI_PROVIDER);
   const model = opts.model || DEFAULT_MODELS[provider];
   const run = opts.runner ?? (provider === "anthropic" ? anthropicProvider() : bedrockProvider(opts.bedrock));
-  const { tools, state } = createSiteTools(opts.tree);
+  const { tools, state } = createSiteTools(opts.tree, opts.capabilities, opts.data ?? {});
   const ctx = opts.context;
 
   const facts = [
@@ -105,7 +139,17 @@ export async function editSite(opts: EditOptions): Promise<EditResult> {
           ctx.categories.map((c) => `${c.category} (${c.count})`).join(", ") || "none"
         }`
       : "Catalogue: none connected (product grids will be empty until one is).",
-  ].join("\n");
+    ctx.media?.length
+      ? `Media library (use these URLs as they are):\n${ctx.media.map((m) => `- ${m.url} — ${m.alt || "(no description)"} [${m.kind}]`).join("\n")}`
+      : "Media library: empty.",
+    opts.brand ? `Brand kit:\n${opts.brand}` : "Brand kit: none — choose colours, fonts and imagery that fit the business.",
+    opts.attachments?.length
+      ? `Attached files (read them; they are the owner's material — use their facts, products, wording and look where the request asks): ${opts.attachments.map((a) => a.name).join(", ")}`
+      : "",
+    `Picture generation: ${opts.capabilities?.generateImage ? `available (generate_image, up to ${opts.capabilities.maxImages ?? 4} this request)` : "not available — use the media library or leave image fields out"}.`,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const user = `${facts}
 
@@ -115,22 +159,31 @@ ${outline(opts.tree)}
 Current site tree:
 ${JSON.stringify(opts.tree)}
 
+Current data collections:
+${JSON.stringify(opts.data ?? {})}
+
 Request:
 ${opts.prompt}`;
 
-  const result = await run({ system: SYSTEM, user, tools, model, maxIterations: opts.maxIterations ?? 30 });
+  const result = await run({ system: SYSTEM, user, tools, model, maxIterations: opts.maxIterations ?? 30, attachments: opts.attachments });
 
-  if (result.refused) throw new AgentError("The AI declined this request. Try rephrasing it.");
-  if (!state.operations.length) {
-    throw new AgentError(result.finalText ? `The AI made no changes: ${result.finalText.slice(0, 300)}` : "The AI made no changes.");
+  const fail = (message: string, outcome: "refused" | "no_change") =>
+    Object.assign(new AgentError(message), { usage: result.usage, outcome, images: state.images });
+  if (result.refused) throw fail("The AI declined this request. Try rephrasing it.", "refused");
+  if (!state.operations.length && !state.dataOperations.length && !state.proposals.length) {
+    throw fail(result.finalText ? `The AI made no changes: ${result.finalText.slice(0, 300)}` : "The AI made no changes.", "no_change");
   }
   return {
     tree: state.tree,
     operations: state.operations,
-    summary: result.finalText.slice(0, 300) || `${state.operations.length} changes`,
+    summary: result.finalText.slice(0, 300) || `${state.operations.length + state.dataOperations.length} changes`,
     model: result.model,
     provider,
     usage: result.usage,
+    images: state.images,
+    data: state.data,
+    dataOperations: state.dataOperations,
+    proposals: state.proposals,
     stopReason: result.stopReason,
   };
 }

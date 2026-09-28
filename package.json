@@ -2,7 +2,7 @@
   "name": "zuuvy-site",
   "private": true,
   "version": "0.1.0",
-  "description": "Zuuvy Sites — an AI-first website platform: landing pages, portfolios and stores, with templates, plugins and data integrations.",
+  "description": "Zuuvy Sites \u2014 an AI-first website platform: landing pages, portfolios and stores, with templates, plugins and data integrations.",
   "type": "module",
   "workspaces": [
     "apps/*",
@@ -23,7 +23,8 @@
     "mock:zuuvy": "tsx scripts/mock-zuuvy.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w @zsite/studio -w @zsite/renderer",
-    "build": "npm run build -w @zsite/studio -w @zsite/renderer"
+    "build": "npm run build -w @zsite/studio -w @zsite/renderer",
+    "admin:create": "tsx scripts/create-superadmin.ts"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

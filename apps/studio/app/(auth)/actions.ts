@@ -1,6 +1,6 @@
 "use server";
 
-import { createSession, login, signup } from "@zsite/platform";
+import { createSession, login, onboard, signup } from "@zsite/platform";
 import { redirect } from "next/navigation";
 import { type ActionState, attempt } from "@/lib/actions";
 import { setSessionCookie } from "@/lib/session";
@@ -26,6 +26,7 @@ export async function signupAction(_: ActionState, form: FormData): Promise<Acti
     });
     const { token, expires } = await createSession(who.userId, who.tenantId);
     await setSessionCookie(token, expires);
-    redirect("/sites/new");
+    await onboard(who.tenantId, { email: text(form, "email").trim().toLowerCase(), name: text(form, "name").trim() }, text(form, "businessName").trim());
+    redirect("/welcome");
   });
 }

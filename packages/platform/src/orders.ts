@@ -10,6 +10,8 @@
  * Money is added up in paise, as integers; a rupee amount is only formed for
  * storage and display.
  */
+import { getAlerts, orderAlertEmail, queueEmail } from "./email";
+import { siteInventory, sourcesFor, tracksStock } from "./inventory";
 import { ConnectorError, type OrderStatus, type OutboundOrder } from "@zsite/connectors";
 import { getProducts } from "./catalog";
 import { type Tx, UserError, isUuid, withTenant } from "./db";
@@ -113,13 +115,19 @@ export async function placeOrder(tenantId: string, input: PlaceOrderInput): Prom
 
   return withTenant(tenantId, async (tx) => {
     const products = new Map((await getProducts(tx, wanted.map((l) => l.productId))).map((p) => [p.id, p]));
+    const inv = input.siteId ? await siteInventory(tx, input.siteId).catch(() => null) : null;
+    const allowed = inv ? sourcesFor(inv) : null;
+    if (inv && !allowed) throw new UserError("This site does not take orders.");
+    const counted = !inv || tracksStock(inv);
     const lines: OrderLine[] = [];
     let subtotal = 0;
     for (const l of wanted) {
       const p = products.get(l.productId);
-      if (!p || !p.active || p.price === null) throw new UserError("One of the products is no longer available.");
-      if (!p.in_stock) throw new UserError(`${p.name} is out of stock.`);
-      if (p.stock !== null && l.quantity > p.stock) {
+      if (!p || !p.active || p.price === null || (allowed && !allowed.includes(p.source))) {
+        throw new UserError("One of the products is no longer available.");
+      }
+      if (counted && !p.in_stock) throw new UserError(`${p.name} is out of stock.`);
+      if (counted && p.stock !== null && l.quantity > p.stock) {
         throw new UserError(`Only ${p.stock} of ${p.name} ${p.stock === 1 ? "is" : "are"} left.`);
       }
       const line = paise(p.price) * l.quantity;
@@ -155,6 +163,24 @@ export async function placeOrder(tenantId: string, input: PlaceOrderInput): Prom
         rupees(subtotal), input.note?.trim().slice(0, 500) || null, linked ? "pending" : "not_linked"],
     );
     await addOrderEvent(tx, order.id, "pending", "Order placed — cash on delivery", "storefront");
+    // Alerts go in the same transaction: no order without its alert, no alert for an order that rolled back.
+    const alerts = await getAlerts(tx);
+    if (alerts.orders && alerts.emails.length) {
+      const business = (await tx.one<{ name: string }>("select name from tenants where id = app_tenant()"))?.name ?? "your store";
+      for (const to of alerts.emails) {
+        await queueEmail(
+          tx,
+          orderAlertEmail(to, {
+            number: seq.n,
+            business,
+            total: rupees(subtotal),
+            customer: name,
+            items: lines.map((l) => `${l.quantity} × ${l.name}`),
+            orderId: order.id,
+          }),
+        );
+      }
+    }
     if (linked) await enqueue(tx, "order.push", { orderId: order.id, kind: "zuuvy" });
     return { id: order.id, number: seq.n, publicToken };
   });

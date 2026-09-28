@@ -1,3 +1,5 @@
+import type { SiteData } from "@zsite/core";
+
 /** What a block needs to know beyond its own props. */
 export type ProductView = {
   id: string;
@@ -15,6 +17,8 @@ export type ProductView = {
 export type RenderContext = {
   mode: "live" | "preview";
   products: ProductView[];
+  /** The version's data collections, for `collection` sections. */
+  data?: SiteData;
   /** Rewrite a tree link for where the site is being shown (live, or inside the studio's preview). */
   href: (href: string) => string;
   /** Where a product card goes; absent = cards are not links. */

@@ -30,6 +30,7 @@ export default async function SiteLayout({ children, params }: { children: React
       <Tabs
         tabs={[
           { href: `/sites/${site.id}/versions`, label: "Versions" },
+          { href: `/sites/${site.id}/content`, label: site.kind === "portfolio" ? "Portfolio content" : "Content" },
           { href: `/sites/${site.id}/settings`, label: "Settings" },
         ]}
       />

@@ -83,6 +83,10 @@ jobs:
       ZSITE_AI_MODEL: ${{ vars.ZSITE_AI_MODEL }}
       DB_MIN_ACU: ${{ vars.DB_MIN_ACU }}
       DB_ENGINE_VERSION: ${{ vars.DB_ENGINE_VERSION }}
+      # "true" once SES has the domain's DKIM records and production access.
+      EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED }}
+      ZSITE_IMAGE_MODEL: ${{ vars.ZSITE_IMAGE_MODEL }}
+      ZSITE_IMAGE_REGION: ${{ vars.ZSITE_IMAGE_REGION }}
       APP_VERSION: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -100,7 +104,7 @@ jobs:
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
           node -e 'const c = JSON.parse(Buffer.from(process.argv[1].split(".")[1], "base64url"));
             console.log(JSON.stringify({ sub: c.sub, aud: c.aud, repository: c.repository, environment: c.environment, ref: c.ref }, null, 2))' "$TOKEN"
-          echo "The role trusts sub = repo:zuuvy-in/zuuvy_ai_site:environment:production and aud = sts.amazonaws.com"
+          echo "The role trusts sub = repo:zuuvy-in@309228253/zuuvy_ai_site@1390232775:environment:production and aud = sts.amazonaws.com"
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -115,6 +119,11 @@ jobs:
       - name: Deploy base (network, database, secrets, migration task)
         working-directory: infra
         run: npx cdk deploy ZsiteBase --require-approval never --outputs-file base-outputs.json
+
+      - name: Email DNS records (add these at the registrar once)
+        working-directory: infra
+        run: |
+          jq -r '.ZsiteBase | to_entries[] | select(.key | startswith("Email")) | "\(.key) = \(.value)"' base-outputs.json || true
 
       - name: Migrate the database
         working-directory: infra

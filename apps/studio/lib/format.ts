@@ -17,3 +17,11 @@ export function ago(date: Date | string | null | undefined): string {
 
 export const dateTime = (d: Date | string) =>
   new Date(d).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+
+/** 1234567 → "1.2M", for token counts. */
+export function compact(n: number | null | undefined): string {
+  const v = Number(n ?? 0);
+  return v.toLocaleString("en-IN", { notation: "compact", maximumFractionDigits: 1 });
+}
+
+export const usd = (n: number) => `$${n.toFixed(n < 1 ? 3 : 2)}`;

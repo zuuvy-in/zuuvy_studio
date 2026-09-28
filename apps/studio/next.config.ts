@@ -15,11 +15,18 @@ const config: NextConfig = {
   outputFileTracingRoot: join(import.meta.dirname, "../.."),
   transpilePackages: ["@zsite/core", "@zsite/platform", "@zsite/runtime", "@zsite/connectors", "@zsite/ai"],
   // The AWS SDK resolves credential providers with dynamic imports; bundling can drop them.
-  serverExternalPackages: ["pg", "@aws-sdk/client-bedrock-runtime"],
+  serverExternalPackages: [
+    "pg",
+    "@aws-sdk/client-bedrock-runtime",
+    "@aws-sdk/client-s3",
+    "@aws-sdk/client-acm",
+    "@aws-sdk/client-elastic-load-balancing-v2",
+  ],
   poweredByHeader: false,
   experimental: {
-    // An AI edit can take a minute or two; the action waits for it.
-    serverActions: { bodySizeLimit: "1mb" },
+    // An AI edit can take a minute or two; the action waits for it. The limit
+    // covers attachments (five files of 4.5 MB) and site archives being imported.
+    serverActions: { bodySizeLimit: "40mb" },
   },
   async headers() {
     return [

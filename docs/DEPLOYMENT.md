@@ -9,7 +9,7 @@ first run builds everything from nothing.
 
 | Stack | Resources |
 |---|---|
-| `ZsiteBase` | VPC (2 AZs, no NAT), Aurora PostgreSQL 16 Serverless v2 (encrypted, TLS enforced, 7-day backups, deletion protection), Secrets Manager secrets (admin and app database passwords, the credential-sealing key — names generated, find them by the stack's Resources tab), ECS cluster, migration task |
+| `ZsiteBase` | Media bucket (pictures; `t/*` public-read, retained), SES domain identity for `zuuvy.site` (DKIM, MAIL FROM `mail.zuuvy.site`), VPC (2 AZs, no NAT), Aurora PostgreSQL 16 Serverless v2 (encrypted, TLS enforced, 7-day backups, deletion protection), Secrets Manager secrets (admin and app database passwords, the credential-sealing key — names generated, find them by the stack's Resources tab), ECS cluster, migration task |
 | `ZsiteServices` | Application Load Balancer, ACM wildcard certificate for `zuuvy.site` + `*.zuuvy.site`, Route 53 records (apex, `*`, `studio`), Fargate services: studio ×1, renderer ×2–6 (CPU autoscaling), worker ×1, CloudWatch log groups, IAM access to Amazon Bedrock |
 
 Rough running cost at the defaults: about $150–200/month (Aurora at 0.5 ACU,
@@ -41,6 +41,9 @@ Optionally add required reviewers to approve each deploy. Then add these
 | `CERTIFICATE_ARN` | *(optional)* `arn:aws:acm:ap-south-1:…` | An issued ACM certificate for `zuuvy.site` + `*.zuuvy.site` |
 | `DOMAIN_READY` | *(optional)* `true` | Set once `zuuvy.site`'s nameservers point at the Route 53 zone. Until then (unset) the studio and sites are served on CloudFront `*.cloudfront.net` addresses — see "Before the domain is ready" |
 | `ZSITE_AI_MODEL` | *(optional)* `apac.amazon.nova-pro-v1:0` | Bedrock model for AI edits; empty = that default |
+| `ZSITE_IMAGE_MODEL` | *(optional)* `amazon.nova-canvas-v1:0` | Bedrock image model for AI pictures |
+| `ZSITE_IMAGE_REGION` | *(optional)* `us-east-1` | Where that model is served (Nova Canvas is not in Mumbai) |
+| `EMAIL_ENABLED` | *(optional)* `true` | Send email through SES. Leave unset until the DKIM records are in and SES production access is granted — see "Email" |
 | `DB_MIN_ACU` | *(optional)* `0.5` | Aurora minimum capacity; `0` pauses when idle |
 | `DB_ENGINE_VERSION` | *(optional)* `16.11` | Aurora PostgreSQL version. AWS retires old minor versions; list what the region offers with `aws rds describe-db-engine-versions --engine aurora-postgresql --region ap-south-1 --query "DBEngineVersions[].EngineVersion"` |
 
@@ -68,8 +71,12 @@ Secrets Manager and inject it in `infra/lib/services-stack.ts` — not in GitHub
    ```
    This creates the roles and asset buckets CDK deploys through; the deploy
    role only assumes those roles and holds no broad permissions itself.
-4. **Bedrock.** Bedrock console (`ap-south-1`) → Model access: make sure
-   Amazon Nova Pro is available to the account.
+4. **Bedrock.** Nothing to enable: serverless models (Amazon Nova included)
+   switch on for the account the first time they are invoked. To check before
+   the first AI edit, open Amazon Nova Pro in the Bedrock playground in
+   `ap-south-1` and send one message. "Operation not allowed" there means AWS
+   has not opened Bedrock to the account yet (new accounts can be held back,
+   like CloudFront) — open a Support case under Account and billing.
 
 ## Keeping DNS at the registrar (Hostinger)
 
@@ -91,6 +98,42 @@ request once:
 
 Moving the nameservers to Route 53 later: set `DNS_PROVIDER` back to empty
 (Route 53), remove `CERTIFICATE_ARN`, redeploy.
+
+## After the first deploy
+
+**The superadmin.** The migration task runs `scripts/create-superadmin.ts`
+every deploy: it creates `rishav@zuuvy.in` if missing and makes it a platform
+superadmin. The first time, the generated password is printed **once** in
+the "Migrate the database" step of the workflow log — sign in at
+`https://studio.zuuvy.site/login`, then open **Platform admin** in the
+sidebar to add more admins. (Locally: `npm run admin:create`.)
+
+**Pictures.** Nova Canvas starts with a zero quota like every Bedrock model:
+Bedrock console → **us-east-1** → Quotas → *Nova Canvas* → request, e.g.
+10 images per minute. Until then "Create picture" explains the refusal.
+If the account has *account-level* S3 Block Public Access switched on, the
+media bucket's public-read policy is refused — turn that setting off for the
+account or pictures will not display.
+
+**Email (SES).**
+1. The deploy prints four or five records under "Email DNS records" (also the
+   `ZsiteBase` outputs `EmailDkim1..3`, `EmailMailFromMx`, `EmailMailFromSpf`,
+   `EmailDmarc`). Add them at Hostinger: three DKIM CNAMEs, an MX and a TXT on
+   `mail`, and the DMARC TXT on `_dmarc`.
+2. SES console (ap-south-1) → Identities → `zuuvy.site` shows **Verified**
+   within an hour of the records appearing.
+3. New accounts are in the SES **sandbox** (mail only to verified addresses).
+   SES → Account dashboard → **Request production access**: transactional,
+   "welcome and order-alert emails to businesses that sign up at
+   studio.zuuvy.site", expected volume.
+4. Set `EMAIL_ENABLED=true` and redeploy. Until then emails are logged by the
+   worker instead of sent.
+
+**Custom domains** need nothing more: the `*` record at Hostinger already
+sends `domains.zuuvy.site` to the load balancer, and the worker handles each
+domain's certificate. The listener takes 25 certificates by default — raise
+*Certificates per Application Load Balancer* in Service Quotas before you pass
+about 20 connected domains.
 
 ## Before the domain is ready
 

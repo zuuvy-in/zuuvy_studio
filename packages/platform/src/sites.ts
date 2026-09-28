@@ -8,12 +8,23 @@
  * has an answer.
  */
 import {
+  type Brand,
   type Change,
+  type DataChange,
+  type DataOp,
+  type SiteData,
+  applyDataOps,
+  diffData,
+  parseData,
+  summariseData,
   type SiteKind,
   type SiteTree,
   type TemplateInput,
+  aiChosenColors,
+  applyBrand,
   diffTrees,
   getTemplate,
+  parseBrand,
   normaliseSubdomain,
   parseTree,
   subdomainProblem,
@@ -37,6 +48,7 @@ export type Site = {
   url: string;
   published_number: number | null;
   latest_number: number;
+  brand: Brand;
 };
 
 export type VersionSource = "template" | "ai" | "manual" | "restore" | "import";
@@ -58,14 +70,14 @@ export type VersionRow = {
   is_published: boolean;
 };
 
-export type Version = VersionRow & { tree: SiteTree | null; git_ref: string | null };
+export type Version = VersionRow & { tree: SiteTree | null; git_ref: string | null; data: SiteData };
 
 const SITE_COLUMNS = `
   s.id, s.name, s.kind, s.subdomain, s.runtime_version, s.published_version_id, s.created_at, s.updated_at,
-  pv.number as published_number, s.version_seq as latest_number`;
+  pv.number as published_number, s.version_seq as latest_number, s.brand`;
 
-function withUrl<T extends { subdomain: string }>(row: T): T & { url: string } {
-  return { ...row, url: siteUrl(row.subdomain) };
+function withUrl<T extends { subdomain: string; brand: unknown }>(row: T): T & { url: string; brand: Brand } {
+  return { ...row, url: siteUrl(row.subdomain), brand: parseBrand(row.brand) };
 }
 
 export async function listSites(tx: Tx): Promise<Site[]> {
@@ -100,6 +112,8 @@ export type CreateSiteInput = {
   templateId: string;
   templateInput: TemplateInput;
   userId: string | null;
+  /** Anything the owner already knows about the brand; empty fields are the AI's to choose. */
+  brand?: Brand;
 };
 
 /** Create a site from a template; version 1 is published straight away. */
@@ -109,15 +123,17 @@ export async function createSite(tx: Tx, input: CreateSiteInput): Promise<Site> 
   const { subdomain, problem } = await checkSubdomain(tx, input.subdomain);
   if (problem) throw new UserError(problem);
   const template = getTemplate(input.templateId);
-  const tree = template.build(input.templateInput);
+  const brand = parseBrand(input.brand ?? {});
+  const tree = applyBrand(template.build(input.templateInput), brand);
+  const data = template.data?.(input.templateInput) ?? {};
 
   let siteId: string;
   try {
     await tx.query("savepoint create_site");
     const row = await tx.get<{ id: string }>(
-      `insert into sites (tenant_id, name, kind, subdomain, runtime_version)
-       values (app_tenant(), $1, $2, $3, $4) returning id`,
-      [name, template.kind, subdomain, CURRENT_RUNTIME],
+      `insert into sites (tenant_id, name, kind, subdomain, runtime_version, brand)
+       values (app_tenant(), $1, $2, $3, $4, $5) returning id`,
+      [name, template.kind, subdomain, CURRENT_RUNTIME, JSON.stringify(brand)],
     );
     await tx.query("release savepoint create_site");
     siteId = row.id;
@@ -128,6 +144,7 @@ export async function createSite(tx: Tx, input: CreateSiteInput): Promise<Site> 
   }
   const v = await createVersion(tx, siteId, {
     tree,
+    data,
     parentId: null,
     source: "template",
     summary: `Created from the ${template.name} template`,
@@ -139,6 +156,8 @@ export async function createSite(tx: Tx, input: CreateSiteInput): Promise<Site> 
 
 export type NewVersion = {
   tree: SiteTree;
+  /** The version's data collections; omitted = the parent's, unchanged. */
+  data?: SiteData;
   parentId: string | null;
   source: VersionSource;
   prompt?: string | null;
@@ -154,22 +173,37 @@ export async function createVersion(tx: Tx, siteId: string, v: NewVersion): Prom
     [siteId],
     "site",
   );
+  const parent = v.parentId ? await getVersion(tx, siteId, v.parentId) : null;
+  const data = parseData(v.data ?? parent?.data ?? {});
   let summary = v.summary;
   if (summary === undefined) {
-    const parent = v.parentId ? await getVersion(tx, siteId, v.parentId) : null;
-    summary = parent?.tree ? summarise(diffTrees(parent.tree, tree)) : "First version";
+    summary = parent?.tree
+      ? [summarise(diffTrees(parent.tree, tree)), summariseData(diffData(parent.data, data))].filter(Boolean).join("; ") || "No changes"
+      : "First version";
   }
   const seq = await tx.get<{ n: number }>(
     "update sites set version_seq = version_seq + 1, updated_at = now() where id = $1 returning version_seq as n",
     [siteId],
   );
-  return tx.get<{ id: string; number: number }>(
+  const created = await tx.get<{ id: string; number: number }>(
     `insert into site_versions
-       (tenant_id, site_id, number, parent_id, mode, tree, runtime_version, source, prompt, summary, ai_meta, created_by)
-     values (app_tenant(), $1, $2, $3, 'managed', $4, $5, $6, $7, $8, $9, $10)
+       (tenant_id, site_id, number, parent_id, mode, tree, data, runtime_version, source, prompt, summary, ai_meta, created_by)
+     values (app_tenant(), $1, $2, $3, 'managed', $4, $11, $5, $6, $7, $8, $9, $10)
      returning id, number`,
     [siteId, seq.n, v.parentId, JSON.stringify(tree), site.runtime_version, v.source, v.prompt ?? null, summary,
-      v.aiMeta ? JSON.stringify(v.aiMeta) : null, v.userId],
+      v.aiMeta ? JSON.stringify(v.aiMeta) : null, v.userId, JSON.stringify(data)],
+  );
+  await queueGit(tx, siteId, "git.push", created.id);
+  return created;
+}
+
+/** With GitHub connected, every version becomes a branch; committed with the version itself. */
+async function queueGit(tx: Tx, siteId: string, topic: "git.push" | "git.merge", versionId: string): Promise<void> {
+  await tx.query(
+    `insert into outbox (tenant_id, topic, payload)
+     select app_tenant(), $2::text, jsonb_build_object('siteId', ($1::uuid)::text, 'versionId', ($3::uuid)::text)
+      where exists (select 1 from site_git where site_id = $1::uuid and status in ('active', 'error'))`,
+    [siteId, topic, versionId],
   );
 }
 
@@ -193,7 +227,7 @@ export async function listVersions(tx: Tx, siteId: string, limit = 100): Promise
 
 export async function getVersion(tx: Tx, siteId: string, versionId: string): Promise<Version> {
   return tx.get<Version>(
-    `select ${VERSION_COLUMNS}, v.tree, v.git_ref ${VERSION_FROM} where v.site_id = $1 and v.id = $2`,
+    `select ${VERSION_COLUMNS}, v.tree, v.git_ref, v.data ${VERSION_FROM} where v.site_id = $1 and v.id = $2`,
     [siteId, versionId],
     "version",
   );
@@ -201,7 +235,7 @@ export async function getVersion(tx: Tx, siteId: string, versionId: string): Pro
 
 export async function getVersionByNumber(tx: Tx, siteId: string, number: number): Promise<Version> {
   return tx.get<Version>(
-    `select ${VERSION_COLUMNS}, v.tree, v.git_ref ${VERSION_FROM} where v.site_id = $1 and v.number = $2`,
+    `select ${VERSION_COLUMNS}, v.tree, v.git_ref, v.data ${VERSION_FROM} where v.site_id = $1 and v.number = $2`,
     [siteId, number],
     "version",
   );
@@ -209,7 +243,7 @@ export async function getVersionByNumber(tx: Tx, siteId: string, number: number)
 
 export async function latestVersion(tx: Tx, siteId: string): Promise<Version> {
   return tx.get<Version>(
-    `select ${VERSION_COLUMNS}, v.tree, v.git_ref ${VERSION_FROM} where v.site_id = $1 order by v.number desc limit 1`,
+    `select ${VERSION_COLUMNS}, v.tree, v.git_ref, v.data ${VERSION_FROM} where v.site_id = $1 order by v.number desc limit 1`,
     [siteId],
     "version",
   );
@@ -243,26 +277,77 @@ export async function publishVersion(tx: Tx, siteId: string, versionId: string, 
      values (app_tenant(), $1, $2, $3, $4)`,
     [siteId, versionId, site.published_version_id, userId],
   );
+  await queueGit(tx, siteId, "git.merge", versionId);
 }
 
-/** Bring an old version back as the newest one, so work continues from it. */
+/**
+ * Bring an old version back as the newest one, so work continues from it.
+ *
+ * The layout comes back whole. The data comes back table by table: each
+ * collection named in `resetCollections` is reset to what it held in the old
+ * version; every other collection keeps today's entries. Omitted means all.
+ */
 export async function restoreVersion(
   tx: Tx,
   siteId: string,
   versionId: string,
   userId: string | null,
+  opts: { resetCollections?: string[]; restoreLayout?: boolean } = {},
 ): Promise<{ id: string; number: number }> {
   const old = await getVersion(tx, siteId, versionId);
   if (!old.tree) throw new UserError("Only managed versions can be restored this way.");
   const head = await latestVersion(tx, siteId);
+  const layout = opts.restoreLayout ?? true;
+  const reset = new Set(opts.resetCollections ?? Object.keys({ ...old.data, ...head.data }));
+  const data: SiteData = {};
+  for (const key of new Set([...Object.keys(old.data), ...Object.keys(head.data)])) {
+    const items = reset.has(key) ? old.data[key] : head.data[key];
+    if (items?.length) data[key] = items;
+  }
+  const tree = layout ? old.tree : head.tree!;
   if (head.id === old.id) throw new UserError(`Version ${old.number} is already the latest.`);
+  if (!diffTrees(head.tree!, tree).length && !diffData(head.data, data).length) {
+    throw new UserError(`Nothing to restore: the latest version already matches version ${old.number} for what you chose.`);
+  }
+  const tables = [...reset].filter((k) => diffData({ [k]: head.data[k] ?? [] }, { [k]: data[k] ?? [] }).length);
   return createVersion(tx, siteId, {
-    tree: old.tree,
+    tree,
+    data,
     parentId: head.id,
     source: "restore",
-    summary: `Restored version ${old.number}`,
+    summary: layout && !opts.resetCollections ? `Restored version ${old.number}` : [
+      layout ? `Restored the layout of version ${old.number}` : "",
+      tables.length ? `reset ${tables.join(", ")} from version ${old.number}` : "",
+    ].filter(Boolean).join("; "),
     userId,
   });
+}
+
+/** Per collection, how the latest version differs from `version` — what a restore could reset. */
+export async function restorableTables(tx: Tx, siteId: string, versionId: string): Promise<DataChange[]> {
+  const [v, head] = [await getVersion(tx, siteId, versionId), await latestVersion(tx, siteId)];
+  return diffData(head.data, v.data);
+}
+
+/**
+ * A manual edit of the data — an entry added, changed, removed or moved in
+ * the studio's Content editor — as a new version on top of the latest.
+ */
+export async function editData(
+  tx: Tx,
+  siteId: string,
+  ops: DataOp[],
+  userId: string | null,
+): Promise<{ id: string; number: number }> {
+  const head = await latestVersion(tx, siteId);
+  if (!head.tree) throw new UserError("Code versions have no managed data.");
+  let data: SiteData;
+  try {
+    data = applyDataOps(head.data, ops);
+  } catch (e) {
+    throw new UserError((e as Error).message);
+  }
+  return createVersion(tx, siteId, { tree: head.tree, data, parentId: head.id, source: "manual", userId });
 }
 
 export type Publication = {
@@ -301,4 +386,40 @@ export async function renameSite(tx: Tx, siteId: string, name: string): Promise<
   const clean = name.trim();
   if (!clean) throw new UserError("Give the site a name.");
   await tx.get("update sites set name = $1, updated_at = now() where id = $2 returning id", [clean, siteId], "site");
+}
+
+/**
+ * Save the brand kit and, when it changes how the site looks, add a version
+ * with it applied to the newest version — unpublished, like any other change,
+ * so the owner previews it before it goes live.
+ */
+export async function saveBrand(
+  tx: Tx,
+  siteId: string,
+  input: Brand,
+  userId: string | null,
+): Promise<{ brand: Brand; version: { id: string; number: number } | null }> {
+  const current = (await getSite(tx, siteId)).brand;
+  // The AI's record of its own choices survives an owner's edit of other fields.
+  const brand = parseBrand({ ...input, aiColors: current.aiColors });
+  await tx.query("update sites set brand = $2, updated_at = now() where id = $1", [siteId, JSON.stringify(brand)]);
+  const latest = await latestVersion(tx, siteId);
+  if (!latest.tree) return { brand, version: null };
+  const branded = applyBrand(latest.tree, brand);
+  if (!diffTrees(latest.tree, branded).length) return { brand, version: null };
+  const version = await createVersion(tx, siteId, {
+    tree: branded,
+    parentId: latest.id,
+    source: "manual",
+    summary: "Applied the brand kit",
+    userId,
+  });
+  return { brand, version };
+}
+
+/** After an AI edit: remember what it chose for the colours the owner left open. */
+export async function recordAiColors(tx: Tx, siteId: string, tree: SiteTree): Promise<void> {
+  const brand = (await getSite(tx, siteId)).brand;
+  const aiColors = aiChosenColors(tree, brand);
+  await tx.query("update sites set brand = jsonb_set(brand, '{aiColors}', $2::jsonb) where id = $1", [siteId, JSON.stringify(aiColors)]);
 }
