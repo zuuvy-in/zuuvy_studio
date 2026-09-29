@@ -3,14 +3,14 @@ import { SiteShell } from "@zsite/runtime";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { OrderView } from "@/app/order/view";
-import { chromeContext, currentCustomer, isStore } from "@/lib/shop";
+import { chromeContext, currentCustomer, hasAccounts } from "@/lib/shop";
 import { currentSite } from "@/lib/site";
 
 export const metadata: Metadata = { title: "Your order", robots: { index: false } };
 
 export default async function AccountOrderPage({ params }: { params: Promise<{ number: string }> }) {
   const current = await currentSite();
-  if (!current || !isStore(current)) notFound();
+  if (!current || !hasAccounts(current)) notFound();
   const { number } = await params;
   const customer = await currentCustomer(current);
   if (!customer) redirect(`/account?next=/account/orders/${encodeURIComponent(number)}`);

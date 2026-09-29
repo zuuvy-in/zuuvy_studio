@@ -19,6 +19,7 @@ import {
   describeIssues,
   newId,
   Commerce,
+  SystemPages,
   DEFAULT_COMMERCE,
   SectionStyle,
 } from "./tree";
@@ -36,15 +37,38 @@ const DeepPartialTheme = z.object({
   illustrationStyle: Theme.shape.illustrationStyle,
 });
 
+/**
+ * A patch of a settings object: every field optional and without its default,
+ * so sending one field changes that field and leaves the rest as they were.
+ * (A default inside a patch would quietly reset whatever the site had.)
+ */
+function patchOf<T extends z.ZodRawShape>(schema: z.ZodObject<T>) {
+  const shape: Record<string, z.ZodType> = {};
+  for (const [k, v] of Object.entries(schema.shape)) {
+    const inner = v instanceof z.ZodDefault ? (v.unwrap() as z.ZodType) : (v as z.ZodType);
+    shape[k] = inner.optional();
+  }
+  return z.object(shape) as unknown as z.ZodObject<{ [K in keyof T]: z.ZodOptional<z.ZodType<z.output<T[K]>>> }>;
+}
+
 export const Operation = z.discriminatedUnion("op", [
   z.object({ op: z.literal("setTheme"), theme: DeepPartialTheme }),
   z.object({
     op: z.literal("setCommerce"),
     commerce: z.object({
-      cart: Commerce.shape.cart.unwrap().partial().optional(),
+      cart: patchOf(Commerce.shape.cart.unwrap()).optional(),
       buy: Commerce.shape.buy.unwrap().optional(),
-      checkout: Commerce.shape.checkout.unwrap().partial().optional(),
-      account: Commerce.shape.account.unwrap().partial().optional(),
+      checkout: patchOf(Commerce.shape.checkout.unwrap()).optional(),
+      account: patchOf(Commerce.shape.account.unwrap()).optional(),
+      pages: z
+        .object({
+          frame: SystemPages.shape.frame.unwrap().optional(),
+          auth: patchOf(SystemPages.shape.auth.unwrap()).optional(),
+          account: patchOf(SystemPages.shape.account.unwrap()).optional(),
+          cart: patchOf(SystemPages.shape.cart.unwrap()).optional(),
+          thanks: patchOf(SystemPages.shape.thanks.unwrap()).optional(),
+        })
+        .optional(),
     }),
   }),
   z.object({
@@ -143,12 +167,20 @@ function applyOne(tree: SiteTree, raw: Operation): void {
       };
       return;
     case "setCommerce": {
-      const now = tree.commerce ?? DEFAULT_COMMERCE;
+      // Parsed, not read: a tree saved before a setting existed has no value for it yet.
+      const now = tree.commerce ? Commerce.parse(tree.commerce) : DEFAULT_COMMERCE;
       tree.commerce = Commerce.parse({
         cart: { ...now.cart, ...op.commerce.cart },
         buy: op.commerce.buy ?? now.buy,
         checkout: { ...now.checkout, ...op.commerce.checkout },
         account: { ...now.account, ...op.commerce.account },
+        pages: {
+          frame: op.commerce.pages?.frame ?? now.pages.frame,
+          auth: { ...now.pages.auth, ...op.commerce.pages?.auth },
+          account: { ...now.pages.account, ...op.commerce.pages?.account },
+          cart: { ...now.pages.cart, ...op.commerce.pages?.cart },
+          thanks: { ...now.pages.thanks, ...op.commerce.pages?.thanks },
+        },
       });
       return;
     }

@@ -1,5 +1,5 @@
 import { orderByToken } from "@zsite/platform";
-import { SiteShell } from "@zsite/runtime";
+import { SiteShell, SystemFrame, commerceOf } from "@zsite/runtime";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { chromeContext } from "@/lib/shop";
@@ -18,9 +18,11 @@ export default async function OrderPage({ params }: { params: Promise<{ token: s
   const ctx = await chromeContext(current);
   return (
     <SiteShell tree={current.site.tree} ctx={ctx}>
-      <div className="zs-container zs-page zs-narrow">
-        <OrderView order={order} />
-      </div>
+      <SystemFrame pages={commerceOf(current.site.tree).pages}>
+        <div className="zs-narrow" style={{ marginInline: "auto" }}>
+          <OrderView order={order} thanks={commerceOf(current.site.tree).pages.thanks} />
+        </div>
+      </SystemFrame>
     </SiteShell>
   );
 }

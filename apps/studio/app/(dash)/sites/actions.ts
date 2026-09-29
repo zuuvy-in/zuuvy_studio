@@ -27,6 +27,7 @@ import {
   saveBrand,
   setInventory,
   setOutOfStock,
+  setSiteAccounts,
   setSiteKind,
   toAttachments,
   uploadAsset,
@@ -209,6 +210,8 @@ export async function renameAction(_: ActionState, form: FormData): Promise<Acti
       await renameSite(tx, siteId, name);
       const kind = text(form, "kind");
       if (kind) await setSiteKind(tx, siteId, kind);
+      // A store always has accounts (its checkout offers them); the box is disabled there and posts nothing.
+      if (kind && kind !== "store") await setSiteAccounts(tx, siteId, form.get("accounts") === "1");
     });
     revalidatePath("/", "layout");
     return { ok: "Saved." };

@@ -96,6 +96,60 @@ export const Link = z.object({ label: Text(60), href: Href });
  * The AI decides these for the site like any other design choice; everything
  * has a default, so a store that never set them still sells.
  */
+/** How a header item is drawn, so the cart and account fit the header they sit in. */
+export const NavItemDisplay = z
+  .enum(["icon", "icon_label", "label", "button", "pill"])
+  .describe("icon: the icon alone (minimal headers); icon_label: icon and word; label: the word as a plain link, like the menu; button: a solid brand button; pill: a soft rounded outline");
+
+const Https = z.string().max(500).regex(/^https:\/\//, "an https URL");
+
+/**
+ * The pages outside the tree — sign in / sign up, the account, the cart and
+ * the thank-you — drawn in the site's theme, with words and a layout the AI
+ * picks for this business.
+ */
+export const SystemPages = z.object({
+  frame: z
+    .enum(["plain", "card", "tinted"])
+    .default("card")
+    .describe("How these pages sit on the background: plain (no boxes, editorial), card (white panels), tinted (panels on a soft brand-tinted page)"),
+  auth: z
+    .object({
+      layout: z
+        .enum(["centered", "split", "image"])
+        .default("split")
+        .describe("centered: one narrow column, sign in above sign up; split: sign in and sign up side by side; image: forms beside a tall picture"),
+      heading: Text(80).optional().describe('Sign-in page heading, e.g. "Welcome back to Asha Bakes"'),
+      intro: Text(200).optional(),
+      image: Https.optional().describe("For the image layout: a picture from the media library or a photo search"),
+      perks: z.array(Text(60)).max(4).default([]).describe('Short reasons to make an account, shown by sign up: "Reorder in one tap", "Track every delivery"'),
+      signInHeading: Text(40).optional(),
+      signUpHeading: Text(40).optional(),
+    })
+    .default({ layout: "split", perks: [] }),
+  account: z
+    .object({
+      heading: Text(60).optional().describe('Greeting on the account page; "{name}" becomes the customer\'s first name, e.g. "Namaste, {name}"'),
+      ordersHeading: Text(40).optional(),
+      emptyOrders: Text(120).optional().describe("What the orders list says before the first order"),
+    })
+    .default({}),
+  cart: z
+    .object({
+      heading: Text(40).optional(),
+      empty: Text(120).optional().describe('An empty cart, in the brand\'s voice: "Nothing in your basket yet — the croissants won\'t wait"'),
+      continueLabel: Text(30).optional(),
+    })
+    .default({}),
+  thanks: z
+    .object({
+      heading: Text(60).optional().describe("After an order is placed"),
+      message: Text(200).optional(),
+    })
+    .default({}),
+});
+export type SystemPages = z.infer<typeof SystemPages>;
+
 export const Commerce = z.object({
   cart: z
     .object({
@@ -105,9 +159,10 @@ export const Commerce = z.object({
         .enum(["nav", "floating"])
         .default("nav")
         .describe("nav: in the header; floating: a round button fixed to the bottom corner — good for long, image-led mobile pages"),
-      label: Text(20).optional().describe('Word beside the icon, e.g. "Bag"; omit for the icon alone'),
+      label: Text(20).optional().describe('The word for it, e.g. "Bag" — shown by the icon_label, label, button and pill displays'),
+      display: NavItemDisplay.default("icon"),
     })
-    .default({ style: "drawer", icon: "bag", placement: "nav" }),
+    .default({ style: "drawer", icon: "bag", placement: "nav", display: "icon" }),
   buy: z
     .enum(["add_to_cart", "buy_now", "both"])
     .default("both")
@@ -126,8 +181,10 @@ export const Commerce = z.object({
       show: z.boolean().default(true).describe("Let customers sign in to see their orders"),
       placement: z.enum(["nav", "footer"]).default("nav"),
       label: Text(20).default("Account"),
+      display: NavItemDisplay.default("icon_label"),
     })
-    .default({ show: true, placement: "nav", label: "Account" }),
+    .default({ show: true, placement: "nav", label: "Account", display: "icon_label" }),
+  pages: SystemPages.default({ frame: "card", auth: { layout: "split", perks: [] }, account: {}, cart: {}, thanks: {} }),
 });
 export type Commerce = z.infer<typeof Commerce>;
 export const DEFAULT_COMMERCE: Commerce = Commerce.parse({});

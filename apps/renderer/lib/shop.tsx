@@ -67,6 +67,8 @@ export const currentCustomer = cache(async (current: Current): Promise<CustomerA
 });
 
 export const isStore = (current: Current) => current.site.site.kind === "store";
+/** Whether visitors can sign in here: every store, and any site whose owner switched accounts on. */
+export const hasAccounts = (current: Current) => isStore(current) || current.site.site.accounts;
 
 const inr = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
 
@@ -99,8 +101,8 @@ export function CartSummaryLines({ quote }: { quote: Quote }) {
   );
 }
 
-function Drawer({ quote }: { quote: Quote | null }) {
-  if (!quote || !quote.lines.length) return <p className="zs-muted">Your cart is empty.</p>;
+function Drawer({ quote, empty }: { quote: Quote | null; empty?: string }) {
+  if (!quote || !quote.lines.length) return <p className="zs-muted">{empty ?? "Your cart is empty."}</p>;
   return (
     <>
       <CartSummaryLines quote={quote} />
@@ -140,16 +142,23 @@ export async function shopContext(current: Current, page: PageQuery = {}): Promi
       ...(page.form ? { status: { section: page.form, ...(page.sent ? { ok: "1" } : {}), ...(page.error ? { error: page.error } : {}) } } : {}),
     },
   };
-  if (!isStore(current)) return base;
+  if (!hasAccounts(current)) return base;
   const c = commerceOf(current.site.tree);
+  if (!isStore(current)) {
+    // Accounts without a shop: a sign-in link in the header, and never a cart.
+    const customer = await currentCustomer(current);
+    return { ...base, shop: { cart: false, accounts: true, cartCount: 0, signedIn: customer ? customer.name.split(" ")[0]! : null } };
+  }
   const [quote, customer] = await Promise.all([glance(current), currentCustomer(current)]);
   return {
     ...base,
     groupHref: (id) => `/g/${id}`,
     shop: {
+      cart: true,
+      accounts: true,
       cartCount: quote?.count ?? 0,
       signedIn: customer ? customer.name.split(" ")[0]! : null,
-      drawer: c.cart.style === "drawer" ? <Drawer quote={quote} /> : undefined,
+      drawer: c.cart.style === "drawer" ? <Drawer quote={quote} empty={c.pages.cart.empty} /> : undefined,
       drawerOpen: page.cart === "open" && c.cart.style === "drawer",
       closeHref: page.path ?? "#",
     },

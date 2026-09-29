@@ -75,6 +75,7 @@ async function prepare(tenantId: string, input: Omit<GenerateInput, "prompt"> & 
       context: {
         businessName: tenant.name,
         siteKind: site.kind,
+        accounts: site.accounts,
         categories,
         productCount: categories.reduce((n, c) => n + c.count, 0),
         catalogueSource: zuuvy && zuuvy.status !== "disconnected" ? "Zuuvy" : null,

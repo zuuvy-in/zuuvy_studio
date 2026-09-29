@@ -195,7 +195,7 @@ describe("store commerce settings", () => {
     const tree = getTemplate("store-classic").build({ businessName: "Meera" });
     expect(tree.commerce).toBeUndefined();
     const next = applyOps(tree, [{ op: "setCommerce", commerce: { cart: { style: "page", placement: "floating" }, buy: "buy_now" } }]);
-    expect(next.commerce?.cart).toEqual({ style: "page", icon: "bag", placement: "floating" });
+    expect(next.commerce?.cart).toEqual({ style: "page", icon: "bag", placement: "floating", display: "icon" });
     expect(next.commerce?.buy).toBe("buy_now");
     expect(next.commerce?.checkout.layout).toBe("single");
     const again = applyOps(next, [{ op: "setCommerce", commerce: { checkout: { layout: "steps", reassurance: "Free delivery in Patna" } } }]);

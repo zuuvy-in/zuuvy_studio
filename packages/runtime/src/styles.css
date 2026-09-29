@@ -911,14 +911,56 @@ a.zs-product:hover,
   font-weight: 500;
   white-space: nowrap;
 }
-.zs-account-link span {
+.zs-account-link .zs-navitem-word {
   max-width: 12ch;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Header items take the look the design chose: plain like the menu, a solid
+   brand button, or a soft pill. Phones keep the icon and drop the word. */
+.zs-navitem-label {
+  font-weight: 500;
+}
+.zs-navitem-button,
+.zs-navitem-pill {
+  padding: 7px 14px;
+  border-radius: var(--zs-radius);
+  font-size: 0.92rem;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+.zs-navitem-button {
+  background: var(--zs-primary);
+  color: var(--zs-primary-ink);
+}
+.zs-navitem-button:hover {
+  background: color-mix(in srgb, var(--zs-primary) 88%, var(--zs-text));
+}
+.zs-navitem-pill {
+  border: 1px solid color-mix(in srgb, var(--zs-text) 18%, transparent);
+  border-radius: 999px;
+}
+.zs-navitem-pill:hover {
+  border-color: var(--zs-primary);
+  color: var(--zs-primary);
+}
+.zs-navitem-button .zs-cart-count,
+.zs-navitem-pill .zs-cart-count {
+  position: static;
+  margin-left: 2px;
+}
+.zs-navitem-button .zs-cart-count {
+  background: var(--zs-primary-ink);
+  color: var(--zs-primary);
+}
 @media (max-width: 640px) {
-  .zs-account-link span {
+  .zs-navitem-icon_label .zs-navitem-word,
+  .zs-navitem-button .zs-navitem-word,
+  .zs-navitem-pill .zs-navitem-word {
     display: none;
+  }
+  .zs-navitem-button,
+  .zs-navitem-pill {
+    padding: 7px 10px;
   }
 }
 .zs-cart-count {
@@ -2223,4 +2265,108 @@ img.zs-icon {
     content: attr(data-label) ": ";
     color: var(--zs-muted);
   }
+}
+
+/* ---------------------------------------------------------------------------
+   System pages: sign in, account, cart, thank-you — framed like the site.
+   --------------------------------------------------------------------------- */
+.zs-sys-narrow {
+  max-width: 980px;
+}
+.zs-sys-tinted {
+  background: color-mix(in srgb, var(--zs-primary) 6%, var(--zs-bg));
+  min-height: 60vh;
+}
+.zs-sys-head h1 {
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  margin: 0 0 6px;
+}
+.zs-sys-head {
+  margin-bottom: 28px;
+}
+.zs-sys-panel {
+  min-width: 0;
+}
+.zs-sys-panel h2 {
+  font-size: 1.2rem;
+  margin: 0 0 12px;
+}
+.zs-sys-card .zs-sys-panel,
+.zs-sys-tinted .zs-sys-panel,
+.zs-sys-card .zs-card,
+.zs-sys-tinted .zs-card {
+  background: var(--zs-surface);
+  color: var(--zs-text);
+  border-radius: var(--zs-radius-card);
+  padding: 24px;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--zs-text) 8%, transparent), 0 12px 32px -18px color-mix(in srgb, var(--zs-text) 30%, transparent);
+}
+.zs-sys-plain .zs-sys-panel + .zs-sys-panel {
+  border-top: 1px solid color-mix(in srgb, var(--zs-text) 12%, transparent);
+  padding-top: 24px;
+}
+.zs-auth-grid {
+  display: grid;
+  gap: 24px;
+  align-items: start;
+}
+.zs-auth-split .zs-auth-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+.zs-auth-centered {
+  max-width: 460px;
+  margin: 0 auto;
+  text-align: left;
+}
+.zs-auth-centered .zs-sys-head {
+  text-align: center;
+}
+.zs-auth-image {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 40px;
+  align-items: start;
+}
+.zs-auth-picture {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  border-radius: var(--zs-radius-card);
+  position: sticky;
+  top: 90px;
+}
+.zs-auth-stack {
+  display: grid;
+  gap: 24px;
+}
+@media (max-width: 820px) {
+  .zs-auth-image {
+    grid-template-columns: 1fr;
+  }
+  .zs-auth-picture {
+    aspect-ratio: 16 / 9;
+    position: static;
+  }
+}
+.zs-sys-perks {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+  display: grid;
+  gap: 6px;
+}
+.zs-sys-perks li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--zs-muted);
+}
+.zs-sys-perks li::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--zs-primary);
+  transform: translateY(-1px);
 }

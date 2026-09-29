@@ -38,7 +38,7 @@ export async function resolveHost(host: string): Promise<ResolvedSite | null> {
 }
 
 export type StorefrontSite = {
-  site: { id: string; name: string; subdomain: string; runtime_version: string; kind: SiteKind };
+  site: { id: string; name: string; subdomain: string; runtime_version: string; kind: SiteKind; accounts: boolean };
   tenant: { name: string };
   version: { id: string; number: number };
   tree: SiteTree;
@@ -53,13 +53,14 @@ export async function loadPublished(r: ResolvedSite): Promise<StorefrontSite | n
       subdomain: string;
       runtime_version: string;
       kind: SiteKind;
+      accounts: boolean;
       version_id: string | null;
       number: number | null;
       tree: SiteTree | null;
       data: SiteData | null;
       tenant_name: string;
     }>(
-      `select s.id, s.name, s.subdomain, s.runtime_version, s.kind, v.id as version_id, v.number, v.tree, v.data, t.name as tenant_name
+      `select s.id, s.name, s.subdomain, s.runtime_version, s.kind, s.accounts, v.id as version_id, v.number, v.tree, v.data, t.name as tenant_name
          from sites s
          join tenants t on t.id = s.tenant_id
          left join site_versions v on v.id = s.published_version_id
@@ -68,7 +69,7 @@ export async function loadPublished(r: ResolvedSite): Promise<StorefrontSite | n
     );
     if (!row || !row.version_id || !row.tree) return null;
     return {
-      site: { id: row.id, name: row.name, subdomain: row.subdomain, runtime_version: row.runtime_version, kind: row.kind },
+      site: { id: row.id, name: row.name, subdomain: row.subdomain, runtime_version: row.runtime_version, kind: row.kind, accounts: row.accounts || row.kind === "store" },
       tenant: { name: row.tenant_name },
       version: { id: row.version_id, number: row.number! },
       tree: row.tree,
