@@ -22,6 +22,8 @@ export type DeployConfig = {
   unsplashKey: string;
   pexelsKey: string;
   mcpServers: string;
+  imageGeneration: string;
+  importHosts: string;
   zuuvyApiUrl: string;
   /** Aurora PostgreSQL engine version; must be one the region offers. */
   dbEngineVersion: string;
@@ -69,6 +71,9 @@ export function loadConfig(): DeployConfig {
     unsplashKey: process.env.UNSPLASH_ACCESS_KEY || "",
     pexelsKey: process.env.PEXELS_API_KEY || "",
     mcpServers: process.env.ZSITE_MCP_SERVERS || "",
+    // Picture generation is off unless "1"; hosts save_image may copy from (default: Icons8).
+    imageGeneration: process.env.ZSITE_IMAGE_GENERATION || "",
+    importHosts: process.env.ZSITE_IMPORT_HOSTS || "",
     zuuvyApiUrl: process.env.ZUUVY_API_URL || "https://api.zuuvy.in",
     // AWS retires old minor versions (16.6 was already gone in ap-south-1), so
     // this is a variable: `aws rds describe-db-engine-versions --engine

@@ -215,6 +215,52 @@ export async function postJson(
 }
 
 // ---------------------------------------------------------------------------
+// Pictures from asset services (Icons8 illustrations, whose clean links expire
+// within the hour, so they are copied into the media library). Only hosts the
+// deployment allows, https only, the same pinned lookup, a size cap.
+// ---------------------------------------------------------------------------
+
+export function hostAllowed(hostname: string, allowed: string[]): boolean {
+  const h = hostname.toLowerCase();
+  return allowed.some((a) => (a.startsWith("*.") ? h.endsWith(a.slice(1)) && h !== a.slice(2) : h === a.toLowerCase()));
+}
+
+export async function fetchAssetBytes(raw: string, allowed: string[], maxBytes = 8_000_000): Promise<{ bytes: Uint8Array; contentType: string }> {
+  let url = checkReferenceUrl(raw);
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (url.protocol !== "https:") throw new UserError("Pictures are fetched over https only.");
+    if (!hostAllowed(url.hostname, allowed)) throw new UserError(`${url.hostname} is not an allowed picture source.`);
+    const res = await new Promise<{ status: number; type: string; location?: string; body: Buffer }>((resolve, reject) => {
+      const req = https.get(url, { lookup: safeLookup as never, timeout: 15_000, headers: { "user-agent": "ZuuvySitesAssets/1.0", accept: "image/*" } }, (r) => {
+        const status = r.statusCode ?? 0;
+        if (status >= 300 && status < 400) {
+          r.resume();
+          return resolve({ status, type: "", location: String(r.headers.location ?? ""), body: Buffer.alloc(0) });
+        }
+        const chunks: Buffer[] = [];
+        let size = 0;
+        r.on("data", (c: Buffer) => {
+          size += c.length;
+          if (size > maxBytes) return req.destroy(new Error("The picture is too large."));
+          chunks.push(c);
+        });
+        r.on("end", () => resolve({ status, type: String(r.headers["content-type"] ?? ""), body: Buffer.concat(chunks) }));
+        r.on("error", reject);
+      });
+      req.on("timeout", () => req.destroy(new Error("The picture took too long.")));
+      req.on("error", (e: NodeJS.ErrnoException) => reject(e.code === "EZSITE_PRIVATE" ? new UserError("That address is not a public website.") : e));
+    });
+    if (res.location !== undefined) {
+      url = checkReferenceUrl(new URL(res.location, url).href);
+      continue;
+    }
+    if (res.status >= 400) throw new UserError(`${url.hostname} answered ${res.status}.`);
+    return { bytes: new Uint8Array(res.body), contentType: res.type.split(";")[0]!.trim() };
+  }
+  throw new UserError("The picture redirected too many times.");
+}
+
+// ---------------------------------------------------------------------------
 // Reading the page. A regex pass rather than a DOM: this runs on untrusted
 // markup and needs only a designer's notes, so nothing here executes or
 // resolves anything the page names.

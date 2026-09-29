@@ -28,3 +28,4 @@ export * from "./discounts";
 export * from "./plugins";
 export * from "./customers";
 export * from "./cart";
+export * from "./tables";

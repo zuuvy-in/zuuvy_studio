@@ -1,4 +1,4 @@
-import { imagesAvailable, listAssets, storage, withTenant } from "@zsite/platform";
+import { imageGenerationEnabled, listAssets, storage, withTenant } from "@zsite/platform";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Badge, Card, CardHeader, EmptyState, Icon, PageHeader } from "@/components/ui";
 import { ago } from "@/lib/format";
@@ -11,7 +11,7 @@ export default async function MediaPage() {
   const session = await requireSession();
   const assets = await withTenant(session.tenant.id, (tx) => listAssets(tx, 200));
   const canStore = Boolean(storage());
-  const canGenerate = imagesAvailable();
+  const canGenerate = imageGenerationEnabled();
   return (
     <>
       <PageHeader

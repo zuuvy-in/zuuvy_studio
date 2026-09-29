@@ -78,6 +78,13 @@ export const Theme = z.object({
    * Visitors who ask their device for reduced motion get none, whatever this says.
    */
   motion: z.enum(["none", "subtle", "lively"]).optional(),
+  /**
+   * The one icon family the site uses, so the next icon matches the last:
+   * "lucide", or "icons8:<pack>" (e.g. "icons8:m_outlined"). Optional.
+   */
+  iconPack: z.string().max(60).regex(/^(lucide|icons8:[A-Za-z0-9_-]+)$/).optional(),
+  /** The one illustration style the site uses (e.g. an Icons8 Ouch style id). Optional. */
+  illustrationStyle: z.string().max(80).optional(),
 });
 export const MOTIONS = ["none", "subtle", "lively"] as const;
 export type Theme = z.infer<typeof Theme>;
@@ -212,7 +219,7 @@ export const BLOCKS = {
   }),
   richText: z.object({
     heading: Text(140).optional(),
-    body: Text(6000).describe("Plain text; blank lines separate paragraphs"),
+    body: Text(6000).describe("Plain text, never HTML or markdown: blank lines separate paragraphs, and lines starting with \"- \" become a bulleted list. Use a table block for tables and a form block for forms"),
   }),
   imageText: z.object({
     heading: Text(140),
@@ -294,6 +301,50 @@ export const BLOCKS = {
       .max(6)
       .describe("How it works, in order"),
   }),
+  form: z.object({
+    heading: Text(140).optional(),
+    subheading: Text(400).optional(),
+    fields: z
+      .array(
+        z.object({
+          name: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/).describe("Key the answer is stored under; for a table destination, one of the table's column keys"),
+          label: Text(80),
+          type: z.enum(["text", "email", "tel", "number", "textarea", "select", "checkbox", "date"]).default("text"),
+          required: z.boolean().default(false),
+          options: z.array(Text(60)).max(30).optional().describe("For select"),
+          placeholder: Text(80).optional(),
+          width: z.enum(["full", "half"]).default("full").describe("half puts two short fields side by side"),
+        }),
+      )
+      .min(1)
+      .max(15),
+    submitLabel: Text(40).default("Send"),
+    successMessage: Text(200).default("Thank you — we'll be in touch soon."),
+    destination: z
+      .discriminatedUnion("kind", [
+        z.object({ kind: z.literal("table"), table: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/).describe("Key of the site table that stores the answers (create it with create_table)") }),
+        z.object({
+          kind: z.literal("url"),
+          url: z
+            .string()
+            .max(500)
+            .refine((v) => /^https:\/\//i.test(v), "an https URL")
+            .describe("Opens this address with the answers as URL parameters (?name=value) — for handing a visitor to another sign-up or booking page"),
+        }),
+      ])
+      .describe("Where answers go"),
+    layout: z.enum(["card", "plain", "split"]).default("card").describe("split: heading and text on the left, the form on the right"),
+    aside: Text(600).optional().describe("For split: reassurance beside the form — response time, what happens next"),
+  }),
+  table: z.object({
+    heading: Text(140).optional(),
+    subheading: Text(400).optional(),
+    columns: z.array(Text(60)).min(1).max(8),
+    rows: z.array(z.array(Text(200)).min(1).max(8)).min(1).max(60).describe("Each row lists one cell per column, as plain text"),
+    style: z.enum(["lined", "striped", "cards"]).default("lined").describe("cards turns each row into a card on phones and wide screens alike"),
+    highlightFirst: z.boolean().default(true).describe("Make the first column read as the row's name"),
+    caption: Text(200).optional().describe("A note under the table: prices include GST, timings change on holidays"),
+  }),
   collection: z.object({
     collection: z.enum(DATA_COLLECTION_KEYS).describe("Which data collection this section shows; its entries are edited as data, not here"),
     heading: Text(140).optional(),
@@ -337,6 +388,8 @@ export const Section = z.discriminatedUnion("type", [
   sectionOf("logos"),
   sectionOf("marquee"),
   sectionOf("steps"),
+  sectionOf("form"),
+  sectionOf("table"),
   sectionOf("collection"),
 ]);
 export type Section = z.infer<typeof Section>;

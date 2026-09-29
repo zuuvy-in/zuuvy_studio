@@ -128,8 +128,18 @@ function Drawer({ quote }: { quote: Quote | null }) {
  * The page context for a store: products, links for variant groups, the
  * cart and account in the header, and quick-add buttons if the design wants them.
  */
-export async function shopContext(current: Current, page: { path?: string; cart?: string } = {}): Promise<RenderContext> {
-  const base = await liveContext(current);
+export type PageQuery = { path?: string; cart?: string; form?: string; sent?: string; error?: string };
+
+export async function shopContext(current: Current, page: PageQuery = {}): Promise<RenderContext> {
+  const base: RenderContext = {
+    ...(await liveContext(current)),
+    forms: {
+      action: "/api/form",
+      page: page.path ?? "/",
+      renderedAt: Date.now(),
+      ...(page.form ? { status: { section: page.form, ...(page.sent ? { ok: "1" } : {}), ...(page.error ? { error: page.error } : {}) } } : {}),
+    },
+  };
   if (!isStore(current)) return base;
   const c = commerceOf(current.site.tree);
   const [quote, customer] = await Promise.all([glance(current), currentCustomer(current)]);
@@ -148,7 +158,7 @@ export async function shopContext(current: Current, page: { path?: string; cart?
 }
 
 /** Pages outside the tree (cart, checkout, account) still get the store's header and cart. */
-export async function chromeContext(current: Current, page: { path?: string; cart?: string } = {}): Promise<RenderContext> {
+export async function chromeContext(current: Current, page: PageQuery = {}): Promise<RenderContext> {
   const ctx = await shopContext(current, page);
   return { ...ctx, href: linkRewriter(""), products: [] };
 }

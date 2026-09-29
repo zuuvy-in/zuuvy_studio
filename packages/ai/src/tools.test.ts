@@ -173,3 +173,84 @@ describe("design tools", () => {
     expect(state.tree.pages[0]!.sections.find((s) => s.id === out.section)?.style).toEqual({ background: "dark" });
   });
 });
+
+describe("forms, tables and plain text", () => {
+  const contact = {
+    heading: "Write to us",
+    fields: [
+      { name: "name", label: "Name", type: "text", required: true },
+      { name: "email", label: "Email", type: "email", required: true },
+    ],
+    destination: { kind: "table", table: "enquiries" },
+  };
+
+  it("creates a table, then a form that fills it, and records both for the version", async () => {
+    const { tools, state } = createSiteTools(tree(), { tables: [] });
+    await expect(async () => tool(tools, "add_section").run({ page: "/", type: "form", props: contact })).rejects.toThrow(/create_table/);
+    await tool(tools, "create_table").run({
+      key: "enquiries",
+      name: "Enquiries",
+      columns: [{ key: "name", label: "Name", type: "text" }, { key: "email", label: "Email", type: "email" }],
+    });
+    const out = JSON.parse(await tool(tools, "add_section").run({ page: "/", type: "form", props: contact }));
+    expect(out.ok).toBe(true);
+    expect(state.tableOps).toEqual([expect.objectContaining({ op: "create", key: "enquiries", notify: true })]);
+    const listed = JSON.parse(await tool(tools, "list_tables").run({}));
+    expect(listed.map((t: { key: string }) => t.key)).toEqual(["enquiries"]);
+  });
+
+  it("refuses a form field its table has no column for, and a table that already exists", async () => {
+    const tables = [{ key: "enquiries", name: "Enquiries", columns: [{ key: "name", label: "Name", type: "text" as const }], rows: 3 }];
+    const { tools } = createSiteTools(tree(), { tables });
+    await expect(async () => tool(tools, "add_section").run({ page: "/", type: "form", props: contact })).rejects.toThrow(/no column for email/);
+    await expect(async () => tool(tools, "create_table").run({ key: "enquiries", name: "x", columns: [{ key: "a", label: "A" }] })).rejects.toThrow(/already exists/);
+  });
+
+  it("never deletes a table itself: the deletion is held for the owner", async () => {
+    const tables = [{ key: "old", name: "Old", columns: [{ key: "a", label: "A", type: "text" as const }], rows: 12 }];
+    const { tools, state } = createSiteTools(tree(), { tables });
+    const out = JSON.parse(await tool(tools, "delete_table").run({ key: "old", reason: "The form was removed" }));
+    expect(out.proposed).toBe(true);
+    expect(state.tableDeletes).toEqual([{ key: "old", reason: "The form was removed" }]);
+    expect(state.tableOps).toHaveLength(0);
+    await expect(async () => tool(tools, "delete_table").run({ key: "missing", reason: "x" })).rejects.toThrow(/no table/);
+  });
+
+  it("stores answers only where tables exist, and lets any site send a form to a URL", async () => {
+    const { tools } = createSiteTools(tree());
+    expect(tools.map((t) => t.name)).not.toContain("create_table");
+    await expect(async () => tool(tools, "add_section").run({ page: "/", type: "form", props: contact })).rejects.toThrow(/not available/);
+    const out = JSON.parse(
+      await tool(tools, "add_section").run({ page: "/", type: "form", props: { ...contact, destination: { kind: "url", url: "https://example.com/signup" } } }),
+    );
+    expect(out.ok).toBe(true);
+  });
+
+  it("turns HTML in text back to the model, and takes a table block instead", async () => {
+    const { tools, state } = createSiteTools(tree());
+    await expect(async () =>
+      tool(tools, "add_section").run({ page: "/", type: "richText", props: { heading: "Prices", body: "<table><tr><td>Cake</td></tr></table>" } }),
+    ).rejects.toThrow(/contains HTML/);
+    await tool(tools, "add_section").run({
+      page: "/",
+      type: "table",
+      props: { heading: "Prices", columns: ["Cake", "Price"], rows: [["Chocolate", "₹600"], ["Mango", "₹650"]] },
+    });
+    await tool(tools, "add_section").run({ page: "/", type: "richText", props: { body: "Prices go up when 3 < 5 — and that is fine.\n- Eggless too" } });
+    expect(state.operations).toHaveLength(2);
+  });
+
+  it("offers save_image only with a way to store it, and passes through what it is given", async () => {
+    expect(createSiteTools(tree()).tools.map((t) => t.name)).not.toContain("save_image");
+    const seen: unknown[] = [];
+    const { tools } = createSiteTools(tree(), {
+      importImage: async (i) => {
+        seen.push(i);
+        return { url: "https://cdn.test/a.png" };
+      },
+    });
+    await expect(async () => tool(tools, "save_image").run({ alt: "x" })).rejects.toThrow(/download url or the svg/);
+    expect(JSON.parse(await tool(tools, "save_image").run({ url: "https://img.icons8.com/x.png", alt: "A cake" })).url).toBe("https://cdn.test/a.png");
+    expect(seen).toEqual([{ url: "https://img.icons8.com/x.png", svg: undefined, alt: "A cake" }]);
+  });
+});

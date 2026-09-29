@@ -1,5 +1,5 @@
 import { collectionSpec, diffData, diffTrees } from "@zsite/core";
-import { ATTACHMENT_ACCEPT, NotFound, type StoredProposal, getSite, getVersion, getVersionByNumber, latestVersion, withTenant } from "@zsite/platform";
+import { ATTACHMENT_ACCEPT, NotFound, type StoredProposal, getSite, getVersion, getVersionByNumber, latestVersion, listSiteTables, withTenant } from "@zsite/platform";
 import { notFound } from "next/navigation";
 import { SourceBadge } from "@/components/badges";
 import { ChangeList } from "@/components/changes";
@@ -10,6 +10,7 @@ import { ago, dateTime } from "@/lib/format";
 import { aiStatus } from "@/lib/ai";
 import { requireSession } from "@/lib/session";
 import { applyProposalsAction, generateAction, planAction, publishAction, restoreAction } from "../../../actions";
+import { deleteTableAction } from "../../forms/actions";
 
 export default async function VersionPage({ params }: { params: Promise<{ siteId: string; number: string }> }) {
   const { siteId, number: raw } = await params;
@@ -22,12 +23,17 @@ export default async function VersionPage({ params }: { params: Promise<{ siteId
     const version = await getVersionByNumber(tx, siteId, number);
     const parent = version.parent_id ? await getVersion(tx, siteId, version.parent_id) : null;
     const latest = await latestVersion(tx, siteId);
-    return { site, version, parent, latest };
+    const tables = await listSiteTables(tx, siteId);
+    return { site, version, parent, latest, tables };
   }).catch((e) => {
     if (e instanceof NotFound) notFound();
     throw e;
   });
-  const { site, version, parent, latest } = data;
+  const { site, version, parent, latest, tables } = data;
+  // Tables the AI asked to delete that still exist: held for the owner, since rows are people's messages.
+  const heldDeletes = ((version.ai_meta as { tableDeletes?: { key: string; reason: string }[] } | null)?.tableDeletes ?? [])
+    .map((d) => ({ ...d, table: tables.find((t) => t.key === d.key) }))
+    .filter((d) => d.table);
   const changes = parent?.tree && version.tree ? diffTrees(parent.tree, version.tree) : [];
   const dataChanges = parent ? diffData(parent.data, version.data) : [];
   // What restoring this version could reset: tables where the latest version differs from this one.
@@ -93,6 +99,30 @@ export default async function VersionPage({ params }: { params: Promise<{ siteId
             ))}
             <SubmitButton pending="Applying…">Allow selected changes</SubmitButton>
           </ActionForm>
+        </Card>
+      )}
+
+      {heldDeletes.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50/60">
+          <CardHeader
+            title="The AI suggests deleting form tables"
+            description="Tables hold what visitors sent, so the AI never deletes one itself. Delete it here, or leave it — keeping it changes nothing."
+          />
+          <div className="space-y-2 p-5 pt-0">
+            {heldDeletes.map((d) => (
+              <ActionForm key={d.key} action={deleteTableAction} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white p-3 text-sm ring-1 ring-amber-200">
+                <input type="hidden" name="siteId" value={site.id} />
+                <input type="hidden" name="table" value={d.table!.id} />
+                <input type="hidden" name="back" value={`/sites/${site.id}/versions/${version.number}`} />
+                <span>
+                  <span className="font-medium text-slate-900">{d.table!.name}</span>{" "}
+                  <span className="text-slate-500">({d.table!.rows ?? 0} answers)</span>
+                  <span className="block text-xs text-slate-600">{d.reason}</span>
+                </span>
+                <SubmitButton variant="danger" size="sm" pending="Deleting…" confirm={`Delete ${d.table!.name} and its ${d.table!.rows ?? 0} answers?`}>Delete table</SubmitButton>
+              </ActionForm>
+            ))}
+          </div>
         </Card>
       )}
 
