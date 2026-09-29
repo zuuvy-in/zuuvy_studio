@@ -69,7 +69,7 @@ const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2
 beforeAll(async () => {
   db = await createTestDatabase();
   setStorage(store);
-  a = await signup({ businessName: "Priya Studio", name: "Priya", email: "priya@studio.test", password: "password-p" });
+  a = await signup({ businessName: "Priya Studio", name: "Priya", email: "priya@studio.test", password: "password-p", emailVerified: true });
 });
 afterAll(async () => {
   setStorage(undefined);
@@ -529,7 +529,7 @@ describe("GitHub sync", () => {
 
 describe("platform admins", () => {
   it("only a superadmin adds or removes admins, and the last superadmin stays", async () => {
-    const boss = await signup({ businessName: "Zuuvy", name: "Rishav", email: "rishav@zuuvy.test", password: "password-r" });
+    const boss = await signup({ businessName: "Zuuvy", name: "Rishav", email: "rishav@zuuvy.test", password: "password-r", emailVerified: true });
     // What scripts/create-superadmin.ts does: the owner role writes the first row.
     const owner = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL });
     await owner.connect();

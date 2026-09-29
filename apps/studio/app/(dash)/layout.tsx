@@ -2,13 +2,15 @@ import Link from "next/link";
 import { StudioMark } from "@/components/logo";
 import { SidebarNav } from "@/components/nav";
 import { Icon } from "@/components/ui";
-import { hasStore, isPlatformAdmin, withTenant } from "@zsite/platform";
+import { emailVerified, hasStore, isPlatformAdmin, withTenant } from "@zsite/platform";
+import { VerifyBanner } from "./verify-banner";
 import { requireSession } from "@/lib/session";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
   const commerce = await withTenant(session.tenant.id, hasStore);
   const admin = await isPlatformAdmin(session.user.id);
+  const verified = await emailVerified(session.user.id);
   return (
     <div className="md:flex">
       <aside className="border-b border-slate-200 bg-slate-50 md:sticky md:top-0 md:flex md:h-screen md:w-60 md:shrink-0 md:flex-col md:border-r md:border-b-0">
@@ -35,7 +37,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </div>
       </aside>
       <main className="min-w-0 flex-1 px-4 py-8 sm:px-8 lg:px-10">
-        <div className="mx-auto max-w-6xl">{children}</div>
+        <div className="mx-auto max-w-6xl">
+          {!verified && <VerifyBanner email={session.user.email} />}
+          {children}
+        </div>
       </main>
     </div>
   );

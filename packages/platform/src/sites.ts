@@ -150,7 +150,8 @@ export async function createSite(tx: Tx, input: CreateSiteInput): Promise<Site> 
     summary: `Created from the ${template.name} template`,
     userId: input.userId,
   });
-  await publishVersion(tx, siteId, v.id, input.userId);
+  // A new account's starter page waits for its email to be confirmed, like anything else it would publish.
+  if (!input.userId || (await canPublish(tx, input.userId))) await publishVersion(tx, siteId, v.id, input.userId);
   return getSite(tx, siteId);
 }
 
@@ -259,6 +260,12 @@ export async function publishedVersion(tx: Tx, siteId: string): Promise<Version 
 }
 
 /** Publish (or roll back to) a version. Publishing the live version is a no-op. */
+/** Publishing puts things on the internet under the business's name: only a confirmed email may. */
+export async function canPublish(tx: Tx, userId: string): Promise<boolean> {
+  const row = await tx.one<{ at: Date | null }>("select email_verified_at as at from users where id = $1", [userId]);
+  return Boolean(row?.at);
+}
+
 export async function publishVersion(tx: Tx, siteId: string, versionId: string, userId: string | null): Promise<void> {
   const site = await tx.get<{ published_version_id: string | null }>(
     "select published_version_id from sites where id = $1 for update",
@@ -271,6 +278,9 @@ export async function publishVersion(tx: Tx, siteId: string, versionId: string, 
   );
   if (!version) throw new NotFound("version not found");
   if (site.published_version_id === versionId) return;
+  if (userId && !(await canPublish(tx, userId))) {
+    throw new UserError("Confirm your email address first — use the link we emailed you. Your site can go live as soon as it is confirmed.");
+  }
   await tx.query("update sites set published_version_id = $1, updated_at = now() where id = $2", [versionId, siteId]);
   await tx.query(
     `insert into site_publications (tenant_id, site_id, version_id, previous_version_id, published_by)

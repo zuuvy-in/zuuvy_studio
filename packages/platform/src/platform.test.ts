@@ -39,8 +39,8 @@ let b: { userId: string; tenantId: string };
 
 beforeAll(async () => {
   db = await createTestDatabase();
-  a = await signup({ businessName: "Demo Mobiles", name: "Asha", email: "asha@demo.test", password: "password-a" });
-  b = await signup({ businessName: "Other Shop", name: "Bala", email: "bala@other.test", password: "password-b" });
+  a = await signup({ businessName: "Demo Mobiles", name: "Asha", email: "asha@demo.test", password: "password-a", emailVerified: true });
+  b = await signup({ businessName: "Other Shop", name: "Bala", email: "bala@other.test", password: "password-b", emailVerified: true });
 });
 afterAll(async () => {
   await db?.drop();

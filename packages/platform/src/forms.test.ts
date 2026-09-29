@@ -9,10 +9,17 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   HANDLERS,
   createSite,
+  createStarterSite,
+  isLandingStart,
+  landingPrompt,
+  landingQuery,
+  parseLanding,
 
   deleteRows,
   deleteSiteTable,
   drainOutbox,
+  emailVerified,
+  getSite,
   generateVersion,
   latestVersion,
   listRows,
@@ -20,10 +27,12 @@ import {
   publishVersion,
   rowsToCsv,
   safeSvg,
+  sendEmailVerification,
   sentForTests,
   setAlerts,
   signup,
   submitForm,
+  verifyEmail,
   withTenant,
 } from "./index";
 import { createTestDatabase } from "./testing";
@@ -51,8 +60,8 @@ const FORM = {
 
 beforeAll(async () => {
   db = await createTestDatabase();
-  a = await signup({ businessName: "Asha Cafe", name: "Asha", email: "asha@cafe.test", password: "password-a" });
-  b = await signup({ businessName: "Other Cafe", name: "Bo", email: "bo@other.test", password: "password-b" });
+  a = await signup({ businessName: "Asha Cafe", name: "Asha", email: "asha@cafe.test", password: "password-a", emailVerified: true });
+  b = await signup({ businessName: "Other Cafe", name: "Bo", email: "bo@other.test", password: "password-b", emailVerified: true });
   const site = await withTenant(a.tenantId, (tx) =>
     createSite(tx, { name: "Asha", subdomain: "asha-cafe", templateId: "landing-launch", templateInput: { businessName: "Asha Cafe" }, userId: a.userId }),
   );
@@ -194,3 +203,67 @@ describe("imported pictures", () => {
 });
 
 
+
+describe("email verification", () => {
+  it("holds a new account's sites back from going live until the link is used", async () => {
+    const c = await signup({ businessName: "New Bakery", name: "Nia", email: "nia@bakery.test", password: "password-n" });
+    const site = await withTenant(c.tenantId, (tx) =>
+      createSite(tx, { name: "Default", subdomain: "nia-bakery", templateId: "landing-launch", templateInput: { businessName: "New Bakery" }, userId: c.userId }),
+    );
+    expect(site.published_number).toBeNull();
+    const v = await withTenant(c.tenantId, (tx) => latestVersion(tx, site.id));
+    await expect(withTenant(c.tenantId, (tx) => publishVersion(tx, site.id, v.id, c.userId))).rejects.toThrow(/Confirm your email/);
+
+    const link = async () => {
+      sentForTests.length = 0;
+      expect(await sendEmailVerification(c.tenantId, c.userId)).toEqual({ sent: true });
+      await drainOutbox(HANDLERS);
+      return /verify-email\?token=([\w-]+)/.exec(sentForTests.find((e) => e.to === "nia@bakery.test")!.text)![1]!;
+    };
+    const links = [await link(), await link()]; // a resend replaces the first link
+    expect(await verifyEmail(links[0]!)).toMatchObject({ error: expect.stringMatching(/already been used|newer one/) });
+    expect(await verifyEmail("short")).toMatchObject({ error: expect.any(String) });
+    expect(await verifyEmail(links[1]!)).toEqual({ userId: c.userId });
+    expect(await emailVerified(c.userId)).toBe(true);
+    expect(await sendEmailVerification(c.tenantId, c.userId)).toEqual({ sent: false });
+
+    await withTenant(c.tenantId, (tx) => publishVersion(tx, site.id, v.id, c.userId));
+    expect((await withTenant(c.tenantId, (tx) => getSite(tx, site.id))).published_number).toBe(1);
+  });
+});
+
+describe("starting from the landing page", () => {
+  it("reads only what a form can honestly carry", () => {
+    const q = new URLSearchParams(
+      "business=Asha%20Bakes&name=Asha&email=ASHA@x.in&phone=98765%2043210&kind=shop&site=Cakes&tagline=Warm%20cakes&prompt=A%20bright%20site&subdomain=Asha%20Bakes!",
+    );
+    const p = parseLanding((k) => q.get(k));
+    expect(p).toEqual({
+      business: "Asha Bakes",
+      name: "Asha",
+      email: "asha@x.in",
+      phone: "98765 43210",
+      kind: "store",
+      site: "Cakes",
+      tagline: "Warm cakes",
+      prompt: "A bright site",
+      subdomain: "asha-bakes",
+    });
+    expect(parseLanding((k) => ({ email: "not-an-email", kind: "spaceship", phone: "call me" })[k] ?? null)).toEqual({});
+    expect(isLandingStart({ business: "x" })).toBe(false);
+    expect(landingQuery({ kind: "store", prompt: "a b" })).toBe("?kind=store&prompt=a+b");
+    expect(landingPrompt({ kind: "portfolio", tagline: "Wedding photos" }, "Ravi Studio")).toBe("A portfolio site for Ravi Studio — Wedding photos");
+  });
+
+  it("creates the site they asked for, on a free address, unpublished until the email is confirmed", async () => {
+    const c = await signup({ businessName: "Ravi Mobiles", name: "Ravi", email: "ravi@mobiles.test", password: "password-r" });
+    const make = () =>
+      withTenant(c.tenantId, (tx) =>
+        createStarterSite(tx, { params: { kind: "store", tagline: "Phones", subdomain: "ravi-mobiles" }, businessName: "Ravi Mobiles", email: "ravi@mobiles.test", userId: c.userId }),
+      );
+    const first = await make();
+    expect(first).toMatchObject({ name: "Default", kind: "store", subdomain: "ravi-mobiles", published_number: null });
+    const second = await make();
+    expect(second.subdomain).toMatch(/^ravi-mobiles-[0-9a-f]{4}$/);
+  });
+});

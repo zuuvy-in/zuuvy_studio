@@ -113,6 +113,17 @@ export function welcomeEmail(to: string, name: string, business: string): Email 
   return { to, from: "no-reply", subject: "Welcome to Zuuvy Sites", html: layout(title, body, action), text: text(title, body, action) };
 }
 
+export function verifyEmailMessage(to: string, name: string, token: string): Email {
+  const studio = config.publicApiUrl();
+  const title = `Confirm your email, ${name.split(" ")[0]}`;
+  const body = [
+    "Tap the button to confirm this is your address. You can build and preview straight away; your site goes live once your email is confirmed.",
+    "The link works for 3 days. If you did not sign up for Zuuvy Sites, ignore this email.",
+  ];
+  const action = { label: "Confirm my email", url: `${studio}/verify-email?token=${token}` };
+  return { to, from: "no-reply", subject: "Confirm your email for Zuuvy Sites", html: layout(title, body, action), text: text(title, body, action) };
+}
+
 export function orderAlertEmail(to: string, o: { number: number; business: string; total: number; customer: string; items: string[]; orderId: string }): Email {
   const studio = config.publicApiUrl();
   const title = `New order WEB-${o.number} — ₹${o.total.toLocaleString("en-IN")}`;

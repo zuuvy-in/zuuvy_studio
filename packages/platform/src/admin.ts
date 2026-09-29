@@ -60,7 +60,7 @@ export async function addPlatformAdmin(
   let password: string | null = null;
   if (!user) {
     password = randomBytes(12).toString("base64url");
-    const made = await signup({ businessName: "Zuuvy Sites team", name: input.name?.trim() || email.split("@")[0]!, email, password });
+    const made = await signup({ businessName: "Zuuvy Sites team", name: input.name?.trim() || email.split("@")[0]!, email, password, emailVerified: true });
     user = { id: made.userId };
   }
   await withGlobal((tx) => tx.query("select grant_platform_admin($1, $2, $3)", [actorId, user!.id, input.role])).catch(refusal);

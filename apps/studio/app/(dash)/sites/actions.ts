@@ -106,7 +106,9 @@ export async function createSiteAction(_: ActionState, form: FormData): Promise<
         userId: session.user.id,
       }),
     );
-    redirect(`/sites/${site.id}/versions`);
+    // Arrived from the landing page with something to build: the builder opens with it.
+    const prompt = text(form, "prompt").slice(0, 1000);
+    redirect(`/sites/${site.id}/versions${prompt ? `?prompt=${encodeURIComponent(prompt)}` : ""}`);
   });
 }
 
