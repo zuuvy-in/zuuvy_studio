@@ -127,6 +127,232 @@ export function rowsToCsv(table: SiteTable, rows: TableRow[]): string {
 }
 
 // ---------------------------------------------------------------------------
+// The Data grid: search, filter, sort, pages; CSV in and out
+// ---------------------------------------------------------------------------
+
+export type RowQuery = {
+  /** Words anywhere in the row. */
+  q?: string;
+  /** Column key → text it contains (a select/checkbox column: equals). */
+  filters?: Record<string, string>;
+  /** A column key, or "received". */
+  sort?: string;
+  dir?: "asc" | "desc";
+  page?: number;
+  perPage?: number;
+};
+
+/** One page of a table's rows, and how many match in all. */
+export async function queryRows(tx: Tx, table: SiteTable, query: RowQuery = {}): Promise<{ rows: TableRow[]; total: number; page: number; pages: number }> {
+  const params: unknown[] = [table.id];
+  const where = ["table_id = $1"];
+  const q = query.q?.trim();
+  if (q) {
+    params.push(`%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+    where.push(`(data::text ilike $${params.length} or coalesce(page, '') ilike $${params.length})`);
+  }
+  for (const [key, raw] of Object.entries(query.filters ?? {})) {
+    const col = table.columns.find((c) => c.key === key);
+    const value = raw.trim();
+    if (!col || !value) continue;
+    params.push(key);
+    const k = params.length;
+    if (col.type === "checkbox") {
+      params.push(/^(yes|true|1|on)$/i.test(value));
+      where.push(`coalesce((data->>$${k})::boolean, false) = $${params.length}`);
+    } else if (col.type === "select") {
+      params.push(value);
+      where.push(`data->>$${k} = $${params.length}`);
+    } else {
+      params.push(`%${value.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+      where.push(`data->>$${k} ilike $${params.length}`);
+    }
+  }
+  const perPage = Math.min(Math.max(query.perPage ?? 50, 1), 10_000);
+  const count = await tx.get<{ n: number }>(`select count(*)::int as n from site_table_rows where ${where.join(" and ")}`, params);
+  const dir = query.dir === "asc" ? "asc" : "desc";
+  const sortCol = table.columns.find((c) => c.key === query.sort);
+  let order = `created_at ${dir}, id ${dir}`;
+  if (sortCol) {
+    params.push(sortCol.key);
+    const expr = sortCol.type === "number" ? `(case when (data->>$${params.length}) ~ '^-?[0-9.]+$' then (data->>$${params.length})::numeric end)` : `lower(data->>$${params.length})`;
+    order = `${expr} ${dir} nulls last, id ${dir}`;
+  }
+  const pages = Math.max(1, Math.ceil(count.n / perPage));
+  const page = Math.min(Math.max(Math.floor(query.page ?? 1), 1), pages);
+  const rows = await tx.query<TableRow>(
+    `select id, data, page, created_at from site_table_rows where ${where.join(" and ")} order by ${order} limit ${perPage} offset ${(page - 1) * perPage}`,
+    params,
+  );
+  return { rows, total: count.n, page, pages };
+}
+
+/** RFC 4180 CSV → rows of cells (quotes, doubled quotes, CR/LF, a BOM). */
+export function parseCsv(text: string): string[][] {
+  const out: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  const s = text.replace(/^\uFEFF/, "");
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]!;
+    if (quoted) {
+      if (ch === '"' && s[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"' && cell === "") quoted = true;
+    else if (ch === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && s[i + 1] === "\n") i++;
+      row.push(cell);
+      if (row.some((c) => c !== "")) out.push(row);
+      row = [];
+      cell = "";
+    } else cell += ch;
+  }
+  row.push(cell);
+  if (row.some((c) => c !== "")) out.push(row);
+  return out;
+}
+
+const MAX_IMPORT = 5000;
+
+/**
+ * What an import does with the rows already there.
+ *   append  — add every row from the file
+ *   replace — empty the table first, then add the file
+ *   update  — a row matching one already there overwrites it; the rest are added
+ *   skip    — a row matching one already there is left out; the rest are added
+ */
+export type ImportMode = "append" | "replace" | "update" | "skip";
+export const IMPORT_MODES: ImportMode[] = ["append", "replace", "update", "skip"];
+
+export type ImportResult = { added: number; updated: number; duplicates: number; removed: number; skipped: { line: number; reason: string }[] };
+
+/** The column a table is naturally matched on: its email, else its phone, else the whole row. */
+export function defaultMatch(table: SiteTable): string[] {
+  const col = table.columns.find((c) => c.type === "email") ?? table.columns.find((c) => c.type === "tel");
+  return col ? [col.key] : [];
+}
+
+/** Two rows are the same when the chosen columns agree (ignoring case and spacing), or, with none chosen, every column does. */
+function matchKey(table: SiteTable, data: Record<string, unknown>, on: string[]): string | null {
+  const keys = on.length ? on : table.columns.map((c) => c.key);
+  const parts = keys.map((k) => (data[k] === undefined || data[k] === null ? "" : String(data[k]).trim().toLowerCase().replace(/\s+/g, " ")));
+  // A row missing what it is matched on cannot be anybody's duplicate.
+  if (on.length && parts.some((p) => !p)) return null;
+  return JSON.stringify(parts);
+}
+
+/**
+ * Add rows from a spreadsheet. The header row names columns by label or key,
+ * in any order; unknown columns are ignored. Each cell is checked like a form
+ * answer would be; a row that fails is skipped and reported, not guessed at.
+ * Our own export's "Received" and "Page" columns come back as they went out.
+ * Nothing is written unless the whole file was read, so a replace never
+ * leaves an empty table behind a file it could not use.
+ */
+export async function importRows(
+  tx: Tx,
+  table: SiteTable,
+  csv: string,
+  opts: { mode?: ImportMode; matchOn?: string[] } = {},
+): Promise<ImportResult> {
+  const mode = opts.mode ?? "append";
+  if (!IMPORT_MODES.includes(mode)) throw new UserError("Choose what to do with the rows already there.");
+  const matchOn = (opts.matchOn ?? defaultMatch(table)).filter((k) => table.columns.some((c) => c.key === k));
+  const lines = parseCsv(csv);
+  if (!lines.length) throw new UserError("That file is empty.");
+  const header = lines[0]!.map((h) => h.trim().toLowerCase());
+  const index = new Map<string, number>();
+  table.columns.forEach((c) => {
+    const at = header.findIndex((h) => h === c.key || h === c.label.toLowerCase());
+    if (at >= 0) index.set(c.key, at);
+  });
+  if (!index.size) throw new UserError(`None of the file's columns match this table. Use a first row with: ${table.columns.map((c) => c.label).join(", ")}.`);
+  const missing = matchOn.filter((k) => !index.has(k));
+  if ((mode === "update" || mode === "skip") && missing.length) {
+    throw new UserError(`To find duplicates the file needs a ${missing.map((k) => table.columns.find((c) => c.key === k)!.label).join(" and ")} column.`);
+  }
+  const receivedAt = header.findIndex((h) => h === "received");
+  const pageAt = header.findIndex((h) => h === "page");
+  const body = lines.slice(1);
+  if (body.length > MAX_IMPORT) throw new UserError(`Import up to ${MAX_IMPORT} rows at a time.`);
+  const skipped: { line: number; reason: string }[] = [];
+  const good: { data: Record<string, string | boolean | number>; page: string | null; at: Date | null }[] = [];
+  body.forEach((cells, i) => {
+    try {
+      const data: Record<string, string | boolean | number> = {};
+      for (const c of table.columns) {
+        const at = index.get(c.key);
+        if (at === undefined) continue; // not in the file: nothing to say about it
+        const raw = (cells[at] ?? "").replace(/^'(?=[=+\-@])/, "");
+        const v = readField({ name: c.key, label: c.label, type: c.type, required: false, options: undefined, width: "full" } as never, raw, { anyOption: true, yesNo: true });
+        if (v !== undefined) data[c.key] = v;
+      }
+      if (!Object.keys(data).length) throw new UserError("The row is empty.");
+      const when = receivedAt >= 0 ? new Date(cells[receivedAt] ?? "") : null;
+      good.push({ data, page: pageAt >= 0 ? (cells[pageAt] || null)?.slice(0, 200) ?? null : null, at: when && !Number.isNaN(when.getTime()) ? when : null });
+    } catch (e) {
+      if (!(e instanceof UserError)) throw e;
+      skipped.push({ line: i + 2, reason: e.message });
+    }
+  });
+
+  const result: ImportResult = { added: 0, updated: 0, duplicates: 0, removed: 0, skipped: skipped.slice(0, 50) };
+  if (!good.length) return result;
+
+  let toInsert = good;
+  if (mode === "replace") {
+    const gone = await tx.query<{ id: number }>("delete from site_table_rows where table_id = $1 returning id", [table.id]);
+    result.removed = gone.length;
+  } else if (mode === "update" || mode === "skip") {
+    const existing = new Map<string, number>();
+    const rows = await tx.query<{ id: number; data: Record<string, unknown> }>("select id, data from site_table_rows where table_id = $1 order by id", [table.id]);
+    for (const r of rows) {
+      const k = matchKey(table, r.data, matchOn);
+      if (k && !existing.has(k)) existing.set(k, r.id);
+    }
+    const seen = new Map<string, (typeof good)[number]>();
+    toInsert = [];
+    for (const g of good) {
+      const k = matchKey(table, g.data, matchOn);
+      const id = k ? existing.get(k) : undefined;
+      if (id !== undefined) {
+        result.duplicates++;
+        if (mode === "update") {
+          // The file's values win; columns the file left blank keep what the row had.
+          await tx.query("update site_table_rows set data = data || $2::jsonb where id = $1", [id, JSON.stringify(g.data)]);
+          result.updated++;
+        }
+        continue;
+      }
+      // The same row twice in one file: the later one, as a spreadsheet's last edit would.
+      if (k && seen.has(k)) {
+        result.duplicates++;
+        if (mode === "update") Object.assign(seen.get(k)!.data, g.data);
+        continue;
+      }
+      if (k) seen.set(k, g);
+      toInsert.push(g);
+    }
+  }
+  if (toInsert.length) {
+    await tx.query(
+      `insert into site_table_rows (tenant_id, table_id, data, page, created_at)
+       select app_tenant(), $1, d, p, coalesce(a, now()) from unnest($2::jsonb[], $3::text[], $4::timestamptz[]) as t(d, p, a)`,
+      [table.id, toInsert.map((g) => JSON.stringify(g.data)), toInsert.map((g) => g.page), toInsert.map((g) => g.at)],
+    );
+  }
+  result.added = toInsert.length;
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Submissions from the live site
 // ---------------------------------------------------------------------------
 
@@ -138,10 +364,16 @@ function findForm(tree: SiteTree, sectionId: string): FormBlock | null {
 }
 
 /** One answer, checked against its field. */
-function readField(field: FormBlock["props"]["fields"][number], raw: string | null): string | boolean | number | undefined {
+function readField(
+  field: FormBlock["props"]["fields"][number],
+  raw: string | null,
+  /** For imports: a table column has no option list, and a sheet says yes/no rather than ticking. */
+  opts: { anyOption?: boolean; yesNo?: boolean } = {},
+): string | boolean | number | undefined {
   const v = (raw ?? "").trim();
   if (field.type === "checkbox") {
     if (field.required && !v) throw new UserError(`Please tick “${field.label}”.`);
+    if (opts.yesNo) return v ? /^(yes|y|true|1|on|x|✓)$/i.test(v) : undefined;
     return Boolean(v);
   }
   if (!v) {
@@ -166,7 +398,7 @@ function readField(field: FormBlock["props"]["fields"][number], raw: string | nu
       if (Number.isNaN(Date.parse(v))) throw new UserError(`“${field.label}” needs a date.`);
       return v.slice(0, 10);
     case "select":
-      if (!(field.options ?? []).includes(v)) throw new UserError(`Choose one of the options for “${field.label}”.`);
+      if (!opts.anyOption && !(field.options ?? []).includes(v)) throw new UserError(`Choose one of the options for “${field.label}”.`);
       return v;
     default:
       return v;
@@ -207,7 +439,7 @@ export async function submitForm(
       const alerts = await getAlerts(tx);
       const lines = form.props.fields.map((f) => `${f.label}: ${data[f.name] === undefined ? "—" : data[f.name] === true ? "yes" : data[f.name] === false ? "no" : data[f.name]}`);
       for (const to of alerts.emails) {
-        const text = `Someone sent the ${form.props.heading ?? table.name} form on ${site.site.name} (${input.page}).\n\n${lines.join("\n")}\n\nSee every answer in Zuuvy Studio → ${site.site.name} → Forms.`;
+        const text = `Someone sent the ${form.props.heading ?? table.name} form on ${site.site.name} (${input.page}).\n\n${lines.join("\n")}\n\nSee every answer in Zuuvy Studio → ${site.site.name} → Data.`;
         await queueEmail(tx, {
           to,
           from: "alerts",

@@ -10,7 +10,7 @@ import { ago, dateTime } from "@/lib/format";
 import { aiStatus } from "@/lib/ai";
 import { requireSession } from "@/lib/session";
 import { applyProposalsAction, generateAction, planAction, publishAction, restoreAction } from "../../../actions";
-import { deleteTableAction } from "../../forms/actions";
+import { deleteTableAction } from "../../data/actions";
 
 export default async function VersionPage({ params }: { params: Promise<{ siteId: string; number: string }> }) {
   const { siteId, number: raw } = await params;
