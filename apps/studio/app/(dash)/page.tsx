@@ -15,6 +15,9 @@ export default async function Overview() {
     orders: await listOrders(tx, { limit: 6 }),
   }));
   const zuuvy = integrations.find((i) => i.kind === "zuuvy" && i.status !== "disconnected");
+  // Orders and connections live under their store; with one store that is where "all" is.
+  const stores = sites.filter((s) => s.kind === "store");
+  const home = stores.length === 1 ? `/sites/${stores[0]!.id}` : "";
 
   return (
     <>
@@ -57,14 +60,14 @@ export default async function Overview() {
           </Card>
 
           <Card>
-            <CardHeader title="Latest orders" actions={<Link href="/orders" className="text-xs font-medium text-brand-600 hover:underline">All orders</Link>} />
+            <CardHeader title="Latest orders" actions={<Link href={`${home}/orders`} className="text-xs font-medium text-brand-600 hover:underline">All orders</Link>} />
             {orders.length === 0 ? (
               <EmptyState icon="cart" title="No orders yet" body="Orders placed on your store appear here and in Zuuvy." />
             ) : (
               <ul className="divide-y divide-slate-100 text-sm">
                 {orders.map((o) => (
                   <li key={o.id}>
-                    <Link href={`/orders/${o.id}`} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-50">
+                    <Link href={o.site_id ? `/sites/${o.site_id}/orders/${o.id}` : `/orders/${o.id}`} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-50">
                       <span className="w-16 font-mono text-xs text-slate-500">WEB-{o.number}</span>
                       <span className="min-w-0 flex-1 truncate">{o.customer.name}</span>
                       <span className="font-medium">{inr(o.total)}</span>
@@ -90,12 +93,12 @@ export default async function Overview() {
                   </div>
                   <p className="mt-3 text-slate-500">Last catalogue sync {ago(zuuvy.last_sync_at)}.</p>
                   {zuuvy.last_error && <p className="mt-2 text-rose-700">{zuuvy.last_error}</p>}
-                  <ButtonLink href="/integrations/zuuvy" variant="secondary" size="sm" className="mt-4">Manage</ButtonLink>
+                  <ButtonLink href={`${home}/integrations/zuuvy`} variant="secondary" size="sm" className="mt-4">Manage</ButtonLink>
                 </>
               ) : (
                 <>
                   <p className="text-slate-600">Connect Zuuvy to list the products you mark for online sale and receive orders in Zuuvy.</p>
-                  <ButtonLink href="/integrations/zuuvy" size="sm" className="mt-4">Connect Zuuvy</ButtonLink>
+                  <ButtonLink href={`${home}/integrations/zuuvy`} size="sm" className="mt-4">Connect Zuuvy</ButtonLink>
                 </>
               )}
             </div>

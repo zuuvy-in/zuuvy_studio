@@ -49,6 +49,7 @@ export async function signUpAction(_: AccountState, form: FormData): Promise<Acc
       email: text(form, "email"),
       phone: text(form, "phone"),
       password: String(form.get("password") ?? ""),
+      siteId: current.resolved.siteId,
     });
     const s = await createCustomerSession(current.resolved.tenantId, customerId);
     await setCustomerCookie(s.token, s.expires);

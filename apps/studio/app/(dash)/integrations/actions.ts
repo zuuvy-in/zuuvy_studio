@@ -9,6 +9,7 @@ import {
 } from "@zsite/platform";
 import { revalidatePath } from "next/cache";
 import { type ActionState, attempt } from "@/lib/actions";
+import { formScope } from "@/lib/scope";
 import { requireSession } from "@/lib/session";
 
 const kindOf = (f: FormData) => String(f.get("kind") ?? "");
@@ -19,7 +20,7 @@ export async function connectAction(_: ActionState, form: FormData): Promise<Act
   return attempt(async () => {
     const kind = kindOf(form);
     const input: Record<string, string> = {};
-    for (const [k, v] of form.entries()) if (typeof v === "string" && k !== "kind" && !k.startsWith("$")) input[k] = v;
+    for (const [k, v] of form.entries()) if (typeof v === "string" && k !== "kind" && !k.startsWith("$") && !k.startsWith("_")) input[k] = v;
     const r = await connectIntegration(session.tenant.id, kind, input, { syncNow: true });
     revalidatePath("/", "layout");
     return r.warning ? { error: r.warning } : { ok: `Connected to ${r.info.headline}.` };
@@ -28,9 +29,10 @@ export async function connectAction(_: ActionState, form: FormData): Promise<Act
 
 export async function testAction(_: ActionState, form: FormData): Promise<ActionState> {
   const session = await requireSession();
+  const scope = formScope(form);
   return attempt(async () => {
     const info = await testIntegration(session.tenant.id, kindOf(form));
-    revalidatePath(`/integrations/${kindOf(form)}`);
+    revalidatePath(`${scope.base}/integrations/${kindOf(form)}`);
     return { ok: `Reached ${info.headline}.` };
   });
 }
@@ -47,10 +49,11 @@ export async function syncAction(_: ActionState, form: FormData): Promise<Action
 
 export async function rotateAction(_: ActionState, form: FormData): Promise<ActionState> {
   const session = await requireSession();
+  const scope = formScope(form);
   if (session.role === "editor") return { error: "Only owners and admins can do this." };
   return attempt(async () => {
     await rotateWebhookSecret(session.tenant.id, kindOf(form));
-    revalidatePath(`/integrations/${kindOf(form)}`);
+    revalidatePath(`${scope.base}/integrations/${kindOf(form)}`);
     return { ok: "New webhook secret registered. The old one no longer works." };
   });
 }

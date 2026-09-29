@@ -1,6 +1,7 @@
 import { listDiscounts, listGroups, listProducts, productCategories, withTenant } from "@zsite/platform";
 import Link from "next/link";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui";
+import { pageScope } from "@/lib/scope";
 import { requireSession } from "@/lib/session";
 import { DiscountForm } from "./form";
 
@@ -11,13 +12,14 @@ const describe = (d: { kind: string; value: number; scope: string; scope_ids: st
     d.min_subtotal ? ` over ₹${d.min_subtotal}` : ""
   }`;
 
-export default async function DiscountsPage() {
+export default async function DiscountsPage({ params }: { params: Promise<{ siteId?: string }> }) {
   const session = await requireSession();
+  const { siteId, base } = await pageScope(params);
   const data = await withTenant(session.tenant.id, async (tx) => ({
-    discounts: await listDiscounts(tx),
-    products: await listProducts(tx),
-    groups: await listGroups(tx),
-    categories: (await productCategories(tx)).map((c) => c.category),
+    discounts: await listDiscounts(tx, siteId),
+    products: await listProducts(tx, { siteId }),
+    groups: await listGroups(tx, siteId),
+    categories: (await productCategories(tx, siteId)).map((c) => c.category),
   }));
   const now = Date.now();
   return (
@@ -39,7 +41,7 @@ export default async function DiscountsPage() {
                 return (
                   <li key={d.id} className="px-5 py-3">
                     <div className="flex items-center justify-between gap-2">
-                      <Link href={`/discounts/${d.id}`} className="font-medium text-slate-900 hover:underline">{d.name}</Link>
+                      <Link href={`${base}/discounts/${d.id}`} className="font-medium text-slate-900 hover:underline">{d.name}</Link>
                       {!d.active ? <Badge>Paused</Badge> : ended ? <Badge tone="amber">Ended</Badge> : out ? <Badge tone="amber">Used up</Badge> : <Badge tone="green">Running</Badge>}
                     </div>
                     <p className="text-xs text-slate-500">

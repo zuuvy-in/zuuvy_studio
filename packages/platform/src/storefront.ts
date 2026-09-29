@@ -89,7 +89,7 @@ export async function productsForTree(tx: Tx, tree: SiteTree, siteId?: string): 
   const inv = await siteInventory(tx, siteId);
   const sources = sourcesFor(inv);
   if (!sources) return [];
-  const rows = (await storefrontProducts(tx, { limit: 200, sources })).map((p) => asSold(p, inv)).filter((p): p is Product => p !== null);
+  const rows = (await storefrontProducts(tx, { limit: 200, sources, siteId })).map((p) => asSold(p, inv)).filter((p): p is Product => p !== null);
   return withGroups(tx, rows);
 }
 
@@ -99,6 +99,8 @@ export async function productsForTree(tx: Tx, tree: SiteTree, siteId?: string): 
  * that sells them marks every product as taking orders beyond its stock.
  */
 export function asSold(p: Product, inv: SiteInventory): Product | null {
+  // Another store's own product is not for sale here.
+  if (p.site_id && p.site_id !== inv.id) return null;
   if (!tracksStock(inv)) return { ...p, in_stock: true, stock: null };
   if (inv.out_of_stock === "hide" && !p.in_stock) return null;
   return sellsOutOfStock(inv) ? { ...p, backorders: true } : p;
@@ -118,7 +120,7 @@ export async function storefrontGroup(r: ResolvedSite, groupId: string): Promise
   if (!isUuid(groupId)) return null;
   return withTenant(r.tenantId, async (tx) => {
     const found = await getGroup(tx, groupId).catch(() => null);
-    if (!found || !found.active) return null;
+    if (!found || !found.active || (found.site_id && found.site_id !== r.siteId)) return null;
     const inv = await siteInventory(tx, r.siteId);
     const sources = sourcesFor(inv);
     if (!sources) return null;
@@ -141,7 +143,7 @@ export async function storefrontProduct(r: ResolvedSite, productId: string): Pro
   return withTenant(r.tenantId, async (tx) => {
     const rows = await tx.query<Product>(
       `select id, source, external_id, name, description, category, price, mrp, currency, unit_label, images,
-              in_stock, stock, active, synced_at, updated_at, group_id, options
+              in_stock, stock, active, synced_at, updated_at, group_id, options, site_id
          from products where id = $1 and active and price is not null`,
       [productId],
     );

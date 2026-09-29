@@ -31,10 +31,10 @@ export const SITE_KINDS: SiteKind[] = ["landing", "portfolio", "store"];
 export type OutOfStockMode = "show" | "hide" | "sell";
 export const OUT_OF_STOCK_MODES: OutOfStockMode[] = ["show", "hide", "sell"];
 
-export type SiteInventory = { kind: SiteKind; inventory: InventoryMode; inventory_source: string | null; out_of_stock: OutOfStockMode };
+export type SiteInventory = { id: string; kind: SiteKind; inventory: InventoryMode; inventory_source: string | null; out_of_stock: OutOfStockMode };
 
 export async function siteInventory(tx: Tx, siteId: string): Promise<SiteInventory> {
-  return tx.get<SiteInventory>("select kind, inventory, inventory_source, out_of_stock from sites where id = $1", [siteId], "site");
+  return tx.get<SiteInventory>("select id, kind, inventory, inventory_source, out_of_stock from sites where id = $1", [siteId], "site");
 }
 
 /** Which product sources a store sells; null for a site that is not a store. */
@@ -55,7 +55,13 @@ export async function setOutOfStock(tx: Tx, siteId: string, mode: string): Promi
 
 export async function setSiteKind(tx: Tx, siteId: string, kind: string): Promise<void> {
   if (!SITE_KINDS.includes(kind as SiteKind)) throw new UserError("Choose a landing page, portfolio or store.");
-  await tx.get("update sites set kind = $2, updated_at = now() where id = $1 returning id", [siteId, kind], "site");
+  // Becoming a store turns accounts on (customers follow their orders there); leaving one keeps the owner's choice.
+  await tx.get("update sites set kind = $2, accounts = accounts or $2 = 'store', updated_at = now() where id = $1 returning id", [siteId, kind], "site");
+}
+
+/** Whether visitors can make an account on this site. A store's checkout offers one; any other site may too (members, bookings). */
+export async function setSiteAccounts(tx: Tx, siteId: string, on: boolean): Promise<void> {
+  await tx.get("update sites set accounts = $2, updated_at = now() where id = $1 returning id", [siteId, on], "site");
 }
 
 export async function setInventory(tx: Tx, siteId: string, mode: string, source: string | null): Promise<void> {
@@ -72,6 +78,13 @@ export async function setInventory(tx: Tx, siteId: string, mode: string, source:
     "update sites set inventory = $2, inventory_source = $3, updated_at = now() where id = $1 returning id",
     [siteId, mode, src],
     "site",
+  );
+}
+
+/** How many stores, and how many sites with customer accounts — the studio's top-level menu follows them. */
+export async function siteCounts(tx: Tx): Promise<{ stores: number; accounts: number; sites: number }> {
+  return tx.get(
+    "select count(*) filter (where kind = 'store')::int as stores, count(*) filter (where accounts)::int as accounts, count(*)::int as sites from sites",
   );
 }
 
@@ -102,6 +115,8 @@ export type ProductInput = {
   /** null = not counted. */
   stock?: number | null;
   active?: boolean;
+  /** The store it is sold in; null = every store. Set when created, kept on edit. */
+  siteId?: string | null;
 };
 
 function clean(input: ProductInput) {
@@ -136,9 +151,9 @@ function clean(input: ProductInput) {
 export async function createProduct(tx: Tx, input: ProductInput): Promise<Product> {
   const p = clean(input);
   return tx.get<Product>(
-    `insert into products (tenant_id, source, name, description, category, price, mrp, unit_label, images, in_stock, stock, active)
-     values (app_tenant(), 'native', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning ${PRODUCT_COLUMNS}`,
-    [p.name, p.description, p.category, p.price, p.mrp, p.unit_label, JSON.stringify(p.images), p.in_stock, p.stock, p.active],
+    `insert into products (tenant_id, source, name, description, category, price, mrp, unit_label, images, in_stock, stock, active, site_id)
+     values (app_tenant(), 'native', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning ${PRODUCT_COLUMNS}`,
+    [p.name, p.description, p.category, p.price, p.mrp, p.unit_label, JSON.stringify(p.images), p.in_stock, p.stock, p.active, input.siteId ?? null],
   );
 }
 

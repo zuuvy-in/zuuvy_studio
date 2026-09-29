@@ -29,6 +29,8 @@ export type Product = {
   group_id: string | null;
   /** This product's value for each of its group's options: { Colour: "Red", Size: "M" }. */
   options: Record<string, string>;
+  /** The store this product belongs to; null = every store of the business (the synced catalogue, older products). */
+  site_id: string | null;
   /** Set by the storefront: this store takes orders beyond its stock (sites.out_of_stock = 'sell'). */
   backorders?: boolean;
   /** Set by the storefront: the group, for showing variants as one card. */
@@ -39,7 +41,7 @@ export type GroupSummary = { id: string; name: string; images: string[]; options
 export type GroupOption = { name: string; values: string[] };
 
 export const PRODUCT_COLUMNS = `id, source, external_id, name, description, category, price, mrp, currency, unit_label,
-  images, in_stock, stock, active, synced_at, updated_at, group_id, options`;
+  images, in_stock, stock, active, synced_at, updated_at, group_id, options, site_id`;
 
 export async function upsertProduct(tx: Tx, source: "zuuvy", item: CatalogItem): Promise<void> {
   await tx.query(
@@ -70,6 +72,8 @@ export type ProductQuery = {
   q?: string;
   /** Only products from these sources — a store shows the catalogue its inventory setting names. */
   sources?: string[];
+  /** Only products this store sells: its own and the shared ones. */
+  siteId?: string;
 };
 
 /** What a storefront may show: active products with a price. */
@@ -90,13 +94,21 @@ export async function storefrontProducts(tx: Tx, query: ProductQuery = {}): Prom
     params.push(query.sources);
     where += ` and source = any($${params.length}::text[])`;
   }
+  if (query.siteId) {
+    params.push(query.siteId);
+    where += ` and (site_id is null or site_id = $${params.length})`;
+  }
   params.push(Math.min(query.limit ?? 48, 200));
   return tx.query<Product>(`select ${PRODUCT_COLUMNS} from products where ${where} order by ${order} limit $${params.length}`, params);
 }
 
-export async function listProducts(tx: Tx, opts: { includeHidden?: boolean; q?: string } = {}): Promise<Product[]> {
+export async function listProducts(tx: Tx, opts: { includeHidden?: boolean; q?: string; siteId?: string } = {}): Promise<Product[]> {
   const params: unknown[] = [];
   const where: string[] = [];
+  if (opts.siteId) {
+    params.push(opts.siteId);
+    where.push(`(site_id is null or site_id = $${params.length})`);
+  }
   if (!opts.includeHidden) where.push("active");
   if (opts.q) {
     params.push(`%${opts.q}%`);
@@ -114,10 +126,11 @@ export async function getProducts(tx: Tx, ids: string[]): Promise<Product[]> {
   return tx.query<Product>(`select ${PRODUCT_COLUMNS} from products where id = any($1::uuid[])`, [ids]);
 }
 
-export async function productCategories(tx: Tx): Promise<{ category: string; count: number }[]> {
+export async function productCategories(tx: Tx, siteId?: string): Promise<{ category: string; count: number }[]> {
   return tx.query(
     `select category, count(*)::int as count from products
-      where active and category is not null group by category order by count desc, category`,
+      where active and category is not null ${siteId ? "and (site_id is null or site_id = $1)" : ""} group by category order by count desc, category`,
+    siteId ? [siteId] : [],
   );
 }
 

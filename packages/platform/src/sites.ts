@@ -49,6 +49,8 @@ export type Site = {
   published_number: number | null;
   latest_number: number;
   brand: Brand;
+  /** Visitors can sign up and sign in (always on for stores' checkout history; a choice for any site). */
+  accounts: boolean;
 };
 
 export type VersionSource = "template" | "ai" | "manual" | "restore" | "import";
@@ -74,7 +76,7 @@ export type Version = VersionRow & { tree: SiteTree | null; git_ref: string | nu
 
 const SITE_COLUMNS = `
   s.id, s.name, s.kind, s.subdomain, s.runtime_version, s.published_version_id, s.created_at, s.updated_at,
-  pv.number as published_number, s.version_seq as latest_number, s.brand`;
+  pv.number as published_number, s.version_seq as latest_number, s.brand, s.accounts`;
 
 function withUrl<T extends { subdomain: string; brand: unknown }>(row: T): T & { url: string; brand: Brand } {
   return { ...row, url: siteUrl(row.subdomain), brand: parseBrand(row.brand) };
@@ -131,8 +133,8 @@ export async function createSite(tx: Tx, input: CreateSiteInput): Promise<Site> 
   try {
     await tx.query("savepoint create_site");
     const row = await tx.get<{ id: string }>(
-      `insert into sites (tenant_id, name, kind, subdomain, runtime_version, brand)
-       values (app_tenant(), $1, $2, $3, $4, $5) returning id`,
+      `insert into sites (tenant_id, name, kind, subdomain, runtime_version, brand, accounts)
+       values (app_tenant(), $1, $2, $3, $4, $5, $2 = 'store') returning id`,
       [name, template.kind, subdomain, CURRENT_RUNTIME, JSON.stringify(brand)],
     );
     await tx.query("release savepoint create_site");

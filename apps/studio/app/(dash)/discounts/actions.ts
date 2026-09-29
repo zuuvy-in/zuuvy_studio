@@ -4,6 +4,7 @@ import { type DiscountInput, createDiscount, deleteDiscount, updateDiscount, wit
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { type ActionState, attempt } from "@/lib/actions";
+import { formScope, ownSiteId } from "@/lib/scope";
 import { requireSession } from "@/lib/session";
 
 const text = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
@@ -37,19 +38,21 @@ function input(form: FormData): DiscountInput {
 
 export async function saveDiscountAction(_: ActionState, form: FormData): Promise<ActionState> {
   const session = await requireSession();
+  const scope = formScope(form);
   return attempt(async () => {
     const id = text(form, "id");
-    await withTenant(session.tenant.id, (tx) => (id ? updateDiscount(tx, id, input(form)) : createDiscount(tx, input(form))));
-    revalidatePath("/discounts");
-    redirect("/discounts");
+    await withTenant(session.tenant.id, async (tx) => (id ? updateDiscount(tx, id, input(form)) : createDiscount(tx, { ...input(form), siteId: await ownSiteId(tx, scope) })));
+    revalidatePath(`${scope.base}/discounts`);
+    redirect(`${scope.base}/discounts`);
   });
 }
 
 export async function deleteDiscountAction(_: ActionState, form: FormData): Promise<ActionState> {
   const session = await requireSession();
+  const scope = formScope(form);
   return attempt(async () => {
     await withTenant(session.tenant.id, (tx) => deleteDiscount(tx, text(form, "id")));
-    revalidatePath("/discounts");
-    redirect("/discounts");
+    revalidatePath(`${scope.base}/discounts`);
+    redirect(`${scope.base}/discounts`);
   });
 }

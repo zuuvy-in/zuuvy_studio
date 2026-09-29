@@ -4,13 +4,15 @@ import { OrderStatusBadge, SyncBadge } from "@/components/badges";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Card, CardHeader, Dl, PageHeader } from "@/components/ui";
 import { dateTime, inr } from "@/lib/format";
+import { pageScope } from "@/lib/scope";
 import { requireSession } from "@/lib/session";
 import { advanceAction, retrySyncAction } from "../actions";
 
-export default async function OrderPage({ params }: { params: Promise<{ orderId: string }> }) {
+export default async function OrderPage({ params }: { params: Promise<{ orderId: string; siteId?: string }> }) {
   const { orderId } = await params;
   if (!isUuid(orderId)) notFound();
   const session = await requireSession();
+  const { siteId, base } = await pageScope(params);
   const order = await withTenant(session.tenant.id, (tx) => getOrder(tx, orderId)).catch((e) => {
     if (e instanceof NotFound) notFound();
     throw e;

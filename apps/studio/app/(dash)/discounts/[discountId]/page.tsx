@@ -3,27 +3,29 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Card, PageHeader } from "@/components/ui";
+import { pageScope } from "@/lib/scope";
 import { requireSession } from "@/lib/session";
 import { deleteDiscountAction } from "../actions";
 import { DiscountForm } from "../form";
 
 export const metadata = { title: "Discount" };
 
-export default async function DiscountPage({ params }: { params: Promise<{ discountId: string }> }) {
+export default async function DiscountPage({ params }: { params: Promise<{ discountId: string; siteId?: string }> }) {
   const { discountId } = await params;
   const session = await requireSession();
+  const { siteId, base } = await pageScope(params);
   const data = await withTenant(session.tenant.id, async (tx) => ({
     discount: await getDiscount(tx, discountId),
-    products: await listProducts(tx),
-    groups: await listGroups(tx),
-    categories: (await productCategories(tx)).map((c) => c.category),
+    products: await listProducts(tx, { siteId }),
+    groups: await listGroups(tx, siteId),
+    categories: (await productCategories(tx, siteId)).map((c) => c.category),
   })).catch((e) => {
     if (e instanceof NotFound || (e as Error).message === "That discount does not exist.") notFound();
     throw e;
   });
   return (
     <>
-      <PageHeader eyebrow={<Link href="/discounts" className="hover:underline">Discounts</Link>} title={data.discount.name} />
+      <PageHeader eyebrow={<Link href={`${base}/discounts`} className="hover:underline">Discounts</Link>} title={data.discount.name} />
       <Card>
         <DiscountForm discount={data.discount} products={data.products} groups={data.groups} categories={data.categories} />
         <ActionForm action={deleteDiscountAction} className="border-t border-slate-100 p-5">
