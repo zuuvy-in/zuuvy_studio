@@ -30,3 +30,5 @@ export * from "./customers";
 export * from "./cart";
 export * from "./tables";
 export * from "./onboarding";
+export * from "./showcases";
+export * from "./showcase-seed";

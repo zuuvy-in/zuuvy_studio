@@ -120,14 +120,33 @@ export type CreateSiteInput = {
 
 /** Create a site from a template; version 1 is published straight away. */
 export async function createSite(tx: Tx, input: CreateSiteInput): Promise<Site> {
+  const template = getTemplate(input.templateId);
+  const brand = parseBrand(input.brand ?? {});
+  return createSiteFrom(tx, {
+    name: input.name,
+    subdomain: input.subdomain,
+    kind: template.kind,
+    tree: applyBrand(template.build(input.templateInput), brand),
+    data: template.data?.(input.templateInput) ?? {},
+    brand,
+    summary: `Created from the ${template.name} template`,
+    userId: input.userId,
+  });
+}
+
+/**
+ * Create a site from a finished tree (a template's, or a premade site being
+ * forked). Version 1 goes live at once — unless the person creating it has
+ * not confirmed their email, when it waits for them like any other publish.
+ */
+export async function createSiteFrom(
+  tx: Tx,
+  input: { name: string; subdomain: string; kind: SiteKind; tree: SiteTree; data: SiteData; brand: Brand; summary: string; userId: string | null },
+): Promise<Site> {
   const name = input.name.trim();
   if (!name) throw new UserError("Give the site a name.");
   const { subdomain, problem } = await checkSubdomain(tx, input.subdomain);
   if (problem) throw new UserError(problem);
-  const template = getTemplate(input.templateId);
-  const brand = parseBrand(input.brand ?? {});
-  const tree = applyBrand(template.build(input.templateInput), brand);
-  const data = template.data?.(input.templateInput) ?? {};
 
   let siteId: string;
   try {
@@ -135,7 +154,7 @@ export async function createSite(tx: Tx, input: CreateSiteInput): Promise<Site> 
     const row = await tx.get<{ id: string }>(
       `insert into sites (tenant_id, name, kind, subdomain, runtime_version, brand, accounts)
        values (app_tenant(), $1, $2, $3, $4, $5, $2 = 'store') returning id`,
-      [name, template.kind, subdomain, CURRENT_RUNTIME, JSON.stringify(brand)],
+      [name, input.kind, subdomain, CURRENT_RUNTIME, JSON.stringify(input.brand)],
     );
     await tx.query("release savepoint create_site");
     siteId = row.id;
@@ -145,11 +164,11 @@ export async function createSite(tx: Tx, input: CreateSiteInput): Promise<Site> 
     throw e;
   }
   const v = await createVersion(tx, siteId, {
-    tree,
-    data,
+    tree: input.tree,
+    data: input.data,
     parentId: null,
     source: "template",
-    summary: `Created from the ${template.name} template`,
+    summary: input.summary,
     userId: input.userId,
   });
   // A new account's starter page waits for its email to be confirmed, like anything else it would publish.

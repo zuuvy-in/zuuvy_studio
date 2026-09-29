@@ -27,6 +27,7 @@ import {
   saveBrand,
   setInventory,
   setOutOfStock,
+  forkShowcase,
   setSiteAccounts,
   setSiteKind,
   toAttachments,
@@ -358,5 +359,23 @@ export async function applyProposalsAction(_: ActionState, form: FormData): Prom
     const v = await applyProposals(session.tenant.id, siteId, Number(text(form, "number")), indices, session.user.id);
     revalidatePath(`/sites/${siteId}`, "layout");
     redirect(`/sites/${siteId}/versions/${v.number}`);
+  });
+}
+
+/** Start a site from a premade one; the builder opens asking to make it theirs. */
+export async function forkShowcaseAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const session = await requireSession();
+  return attempt(async () => {
+    const site = await forkShowcase(session.tenant.id, {
+      showcaseId: text(form, "showcaseId"),
+      name: text(form, "name"),
+      subdomain: text(form, "subdomain"),
+      businessName: session.tenant.name,
+      userId: session.user.id,
+      withProducts: form.get("products") === "1",
+    });
+    revalidatePath("/", "layout");
+    const prompt = `Make this site ours: ${session.tenant.name}. Replace the sample words, prices, contact details and pictures with ours, and keep the design.`;
+    redirect(`/sites/${site.id}/versions?prompt=${encodeURIComponent(prompt)}`);
   });
 }
