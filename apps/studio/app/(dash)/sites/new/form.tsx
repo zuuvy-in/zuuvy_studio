@@ -15,14 +15,26 @@ const SWATCH: Record<string, string> = {
   portfolio: "from-stone-800 to-orange-600",
 };
 
-export function NewSiteForm({ templates, businessName, domain }: { templates: T[]; businessName: string; domain: string }) {
-  const [template, setTemplate] = useState(templates[0]!.id);
-  const [name, setName] = useState(businessName);
-  const [sub, setSub] = useState(slug(businessName));
+export function NewSiteForm({
+  templates,
+  businessName,
+  domain,
+  initial = {},
+}: {
+  templates: T[];
+  businessName: string;
+  domain: string;
+  /** Filled in from the landing page's form, when they arrived from it. */
+  initial?: { template?: string; name?: string; subdomain?: string; tagline?: string; prompt?: string };
+}) {
+  const [template, setTemplate] = useState(initial.template ?? templates[0]!.id);
+  const [name, setName] = useState(initial.name ?? businessName);
+  const [sub, setSub] = useState(initial.subdomain ?? slug(initial.name ?? businessName));
   const [touched, setTouched] = useState(false);
 
   return (
     <ActionForm action={createSiteAction} className="space-y-6">
+      {initial.prompt && <input type="hidden" name="prompt" value={initial.prompt} />}
       <fieldset>
         <legend className="label">Template</legend>
         <div className="grid gap-3 sm:grid-cols-3">
@@ -52,7 +64,7 @@ export function NewSiteForm({ templates, businessName, domain }: { templates: T[
         </div>
         <div className="sm:col-span-2">
           <label className="label" htmlFor="tagline">One line about the business <span className="font-normal text-slate-400">(optional)</span></label>
-          <input id="tagline" name="tagline" className="field" placeholder="Genuine mobile accessories, delivered across Patna" />
+          <input id="tagline" name="tagline" defaultValue={initial.tagline} className="field" placeholder="Genuine mobile accessories, delivered across Patna" />
         </div>
       </Card>
 

@@ -30,7 +30,7 @@ if (user) {
   console.log(`superadmin: ${email} already has an account`);
 } else {
   const password = values.password || randomBytes(12).toString("base64url");
-  const made = await signup({ businessName: "Zuuvy", name: values.name!, email, password });
+  const made = await signup({ businessName: "Zuuvy", name: values.name!, email, password, emailVerified: true });
   user = { id: made.userId };
   console.log(`superadmin: created ${email}`);
   if (!values.password) console.log(`superadmin: generated password (shown once — sign in and keep it safe): ${password}`);

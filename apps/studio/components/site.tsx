@@ -68,9 +68,9 @@ function PlanCard({ plan }: { plan: Plan }) {
   );
 }
 
-function ComposerBody({ disabled, accept, plan: planFn }: { disabled: boolean; accept: string; plan?: PlanFn }) {
+function ComposerBody({ disabled, accept, plan: planFn, initialPrompt = "" }: { disabled: boolean; accept: string; plan?: PlanFn; initialPrompt?: string }) {
   const { pending } = useFormStatus();
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [files, setFiles] = useState<string[]>([]);
   const [showLinks, setShowLinks] = useState(false);
   const [planFirst, setPlanFirst] = useState(Boolean(planFn));
@@ -209,7 +209,10 @@ export function Composer({
   title = "Describe a change",
   accept = "",
   plan,
+  initialPrompt,
 }: {
+  /** What the box opens with — the landing page's request, or feedback gathered on the preview. */
+  initialPrompt?: string;
   action: (state: ActionState, form: FormData) => Promise<ActionState>;
   /** "Plan first": drafts a plan to approve before building. Without it the composer builds straight away. */
   plan?: PlanFn;
@@ -233,7 +236,7 @@ export function Composer({
         </p>
         <p className="text-xs text-slate-500">Based on v{baseNumber} · nothing goes live until you publish</p>
       </div>
-      <ComposerBody disabled={!aiReady} accept={accept} plan={plan} />
+      <ComposerBody disabled={!aiReady} accept={accept} plan={plan} initialPrompt={initialPrompt} />
       {!aiReady && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">
           {setupHint ?? "AI editing is not configured."}

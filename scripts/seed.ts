@@ -13,7 +13,7 @@ const existing = await withGlobal((tx) => tx.one("select 1 from users where emai
 if (existing) {
   console.log(`demo account exists — sign in as ${EMAIL} / ${PASSWORD}`);
 } else {
-  const who = await signup({ businessName: "Demo Mobiles", name: "Demo Owner", email: EMAIL, password: PASSWORD });
+  const who = await signup({ businessName: "Demo Mobiles", name: "Demo Owner", email: EMAIL, password: PASSWORD, emailVerified: true });
   const site = await withTenant(who.tenantId, (tx) =>
     createSite(tx, {
       name: "Demo Mobiles",

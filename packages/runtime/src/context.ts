@@ -47,6 +47,14 @@ export type RenderContext = {
   shop?: ShopContext;
   /** A quick "add to cart" control under a product card, when the store offers one. */
   cardAction?: (product: ProductView) => ReactNode;
+  /** Live sites: where forms post, and the outcome of the last submission. Absent in previews. */
+  forms?: {
+    action: string;
+    page: string;
+    /** When the page was drawn (ms), sent back to tell people from instant bots. */
+    renderedAt: number;
+    status?: { section: string; ok?: string; error?: string };
+  };
 };
 
 /** Internal links are prefixed with `base`; everything else passes through. */

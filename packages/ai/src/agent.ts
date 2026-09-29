@@ -13,12 +13,12 @@
 import { BLOCKS, COLLECTIONS, type DataOp, type Operation, type SiteData, type SiteTree } from "@zsite/core";
 import { z } from "zod";
 import { AgentError } from "./errors";
-import { skillsForPrompt } from "./skills";
+import { ICONS8_GUIDE, skillsForPrompt } from "./skills";
 import { anthropicProvider } from "./providers/anthropic";
 import { type BedrockOptions, bedrockProvider } from "./providers/bedrock";
 import { type McpConnection, type McpOptions, connectMcp } from "./mcp/client";
 import type { Attachment, Provider, ProviderResult, Usage } from "./providers/types";
-import { type Proposal, type ToolCapabilities, createSiteTools, outline } from "./tools";
+import { type Proposal, type TableOpSpec, type ToolCapabilities, createSiteTools, outline } from "./tools";
 
 export type SiteContext = {
   businessName: string;
@@ -29,6 +29,9 @@ export type SiteContext = {
   catalogueSource: string | null;
   /** The business's media library: pictures the AI may place without generating new ones. */
   media?: { url: string; alt: string; kind: "upload" | "generated" }[];
+  /** The site's locked icon family and illustration style, from its theme. */
+  iconPack?: string;
+  illustrationStyle?: string;
 };
 
 export type EditResult = {
@@ -45,6 +48,10 @@ export type EditResult = {
   dataOperations: DataOp[];
   /** Changes to existing data held back for the owner to allow. */
   proposals: Proposal[];
+  /** Tables to create or change with this version. */
+  tableOps?: TableOpSpec[];
+  /** Tables the AI asked to delete, held for the owner. */
+  tableDeletes?: { key: string; reason: string }[];
   stopReason: string | null;
   /** Set when the requested model could not be used and the fallback model did the edit. */
   fellBack?: string;
@@ -86,10 +93,11 @@ How a site is built:
 - Refer to pages by path ("/", "/about") or id, and to sections by id. Ids of things you add come back in the tool result.
 - Product grids fill themselves from the connected catalogue. Never type products, prices or stock into other blocks; to feature a category, set a productGrid's \`category\` to one of the catalogue's categories exactly as given.
 - Links are "/path", "/#section-id", https://, mailto: or tel:. Anchor links point at section ids.
-- Images must be https URLs: ones the user gave you, ones from the media library listed with the request, or ones generate_image returned. Prefer the business's own uploaded pictures for its products, premises and people. If generate_image is available and the request asks for pictures, illustrations or a more visual site, generate them; otherwise leave image fields out and the site shows a tasteful placeholder. Never invent an image URL. If generate_image fails, do not retry it: make every other change the request asks for, leave those image fields empty, and mention it in your summary. A failed picture is never a reason to change nothing.
+- Images must be https URLs, and never invented. Sources, in order: the owner's own pictures (the media library listed with the request) for their products, premises and people; real photography from design__search_photos (Unsplash — use each URL exactly as given and credit the photographer); illustrations and icons from the Icons8 tools when they are listed (save illustrations with save_image first — their links expire); generate_image only if it is listed. Follow the imagery skill: photos for real things, illustrations for ideas and empty states, never both styles mixed in one row. If no source fits, leave the image field out and the site shows a tasteful placeholder. A failed picture is never a reason to change nothing.
 - Portfolio sites keep structured content in data collections (profile, projects, experience, education, skills, services, testimonials, awards, publications, clients, gallery), not in section props; a "collection" section shows one of them. Only use collections when the request's facts say "Data collections: available". Portfolios should be built this way: put the facts in the data, then show them with collection sections. Use the data tools (view_data, add_entry, update_entry, remove_entry, move_entry).
 - The owner's data is theirs. Adding entries and filling empty fields is fine. Changing a value that is already there, removing an entry, or replacing the profile is held for the owner's permission automatically — do not try to get round it; say in your summary what you proposed. Never invent facts for the data (employers, clients, dates, awards, quotes); use what the owner gave you, attached files included.
 - A store's cart, checkout and customer account are part of the design: decide them with set_commerce (cart drawer or page, where the cart and account links sit, which buy buttons, checkout layout and wording). When you build or restyle a store, set them to suit it. Cart, checkout and account pages are drawn by the platform from these settings — never build them as sections.
+- Forms (contact, enquiry, booking, quote, sign-up) are form blocks. To keep the answers, create_table first (one column per field, same keys) and point the form's destination at it; to hand the visitor to another page (a sign-up or booking system), use destination url and the answers go as URL parameters. Tabular content (prices, timings, specs, comparisons) is a table block. Never write HTML or markdown into any text.
 - Motion is a theme setting (set_theme motion: none, subtle or lively). Use it when the request asks for animation or a livelier feel.
 - When the request names a website as a reference and fetch_reference is available, look at it first, then build in that spirit for this business: its structure, tone and palette, never its words, images or name.
 
@@ -157,7 +165,7 @@ export function describeRequest(
   mcp: McpConnection | null,
   tools: { name: string }[],
 ): string {
-  const ctx = opts.context;
+  const ctx = { ...opts.context, iconPack: opts.tree.theme.iconPack, illustrationStyle: opts.tree.theme.illustrationStyle };
   const facts = [
     `Business: ${ctx.businessName}`,
     `Kind of site: ${ctx.siteKind}`,
@@ -176,7 +184,18 @@ export function describeRequest(
     opts.attachments?.length
       ? `Attached files (read them; they are the owner's material — use their facts, products, wording and look where the request asks): ${opts.attachments.map((a) => a.name).join(", ")}`
       : "",
-    `Picture generation: ${opts.capabilities?.generateImage ? `available (generate_image, up to ${opts.capabilities.maxImages ?? 4} this request)` : "not available — use the media library or leave image fields out"}.`,
+    opts.capabilities?.generateImage
+      ? `Picture generation: available (generate_image, up to ${opts.capabilities.maxImages ?? 4} this request) — only when no photo or illustration fits.`
+      : "Picture generation: off. Use photos (design__search_photos), Icons8 illustrations and icons when those tools are listed, and the media library.",
+    ctx.iconPack || ctx.illustrationStyle
+      ? `This site's locked styles (keep to them): ${[ctx.iconPack && `icons ${ctx.iconPack}`, ctx.illustrationStyle && `illustrations ${ctx.illustrationStyle}`].filter(Boolean).join(", ")}.`
+      : "",
+    tools.some((t) => t.name.startsWith("icons8__")) ? `Icons8 is connected.\n${ICONS8_GUIDE}` : "",
+    opts.capabilities?.tables
+      ? `Site tables (where forms store answers): ${
+          opts.capabilities.tables.length ? opts.capabilities.tables.map((t) => `${t.key} [${t.columns.map((c) => c.key).join(", ")}] — ${t.rows} answers`).join("; ") : "none yet"
+        }.`
+      : "",
     mcp?.summary.length
       ? `Design helpers (MCP tools — call them before choosing colours, fonts, layout or photos when the request is about the look):\n${mcp.summary.map((l) => `- ${l}`).join("\n")}${
           tools.some((t) => t.name === "design__search_photos")
@@ -249,7 +268,8 @@ export async function editSite(opts: EditOptions): Promise<EditResult> {
 
     // A model sometimes describes edits it never made (no tool call succeeded) —
     // typically after a tool failed. Ask once more, plainly, before giving up.
-    const nothingDone = () => !state.operations.length && !state.dataOperations.length && !state.proposals.length;
+    const nothingDone = () =>
+      !state.operations.length && !state.dataOperations.length && !state.proposals.length && !state.tableOps.length && !state.tableDeletes.length;
     if (!result.refused && nothingDone() && result.finalText) {
       const retry = await attempt(
         `${user}\n\nYour previous attempt replied "${result.finalText.slice(0, 400)}" but made no change: no tool call succeeded, so nothing was saved. Make the requested changes now by calling the tools${state.imageError ? " (picture generation is unavailable — skip pictures, do everything else)" : ""}.`,
@@ -294,6 +314,8 @@ export async function editSite(opts: EditOptions): Promise<EditResult> {
       data: state.data,
       dataOperations: state.dataOperations,
       proposals: state.proposals,
+      tableOps: state.tableOps,
+      tableDeletes: state.tableDeletes,
       stopReason: result.stopReason,
       fellBack: fellBack || undefined,
     };

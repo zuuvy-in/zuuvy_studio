@@ -1,4 +1,8 @@
 /**
+ * The Icons8 guidance (ICONS8_GUIDE) is adapted from Icons8's agent skills
+ * `icons8` and `ouch` (https://github.com/icons8/agent-skills), Copyright (c)
+ * 2026 Icons8 LLC, Apache License 2.0 — see packages/ai/THIRD_PARTY_NOTICES.md.
+ *
  * Skills: what a good web designer, copywriter and motion designer know,
  * written for this builder's blocks and settings. They go into the editor's
  * system prompt (static text, so it stays cacheable) and the design kit serves
@@ -41,7 +45,7 @@ Use style_section so backgrounds alternate — default → surface → default �
 - gallery: masonry for portfolios and food, carousel for many images.
 
 ## Icons
-Every feature, step and bullet gets an icon that means something (truck for delivery, shield-check for warranty). Use design__search_icons to find exact Lucide names; never guess a name. One icon style per site.
+Every feature, step and bullet gets an icon that means something (truck for delivery, shield-check for warranty). One icon family per site, recorded in the theme's iconPack: Lucide names from design__search_icons by default, or one Icons8 pack when Icons8 is connected and suits the site better. Never guess a name, never mix families.
 
 ## Colour and type
 Brand colour for buttons, highlights and one bold section — not everywhere. Headings in the heading font, big and tight. Keep text readable on every background (the dark, primary and gradient backgrounds invert text automatically).`,
@@ -77,6 +81,35 @@ Answer the real objections: delivery area and time, payment (COD/UPI), returns, 
 
 ## Short inputs
 From a one-line request, infer the audience and their worries, and write for them. Choose rotating words, badges and marquee phrases that capture the business in a glance ("Free delivery · Eggless options · Custom designs").`,
+  },
+  imagery: {
+    title: "Imagery",
+    summary: "Which picture where: real photos, illustrations or icons, used as one consistent set.",
+    body: `# Imagery skill
+
+Pictures decide whether a site looks real. No picture is generated: use the owner's own pictures first, then real photography (design__search_photos, from Unsplash), then drawn illustrations and icons (Icons8, when its tools are listed).
+
+## Choose the kind for the job
+- **The owner's photos** (media library): always first for their products, shop, food, team and work — nothing sells like the real thing.
+- **Photography**: real places, people, food, products, materials. Heroes of food, fashion, travel, hospitality, beauty, fitness, real estate. Search concrete, local words ("indian thali on a steel plate", "tailor measuring fabric") and pick photos that could plausibly be this business; avoid obvious stock (handshakes, headsets, suits pointing at screens).
+- **Illustration**: ideas a photo cannot show — how a service works, software and tech, finance, education, onboarding, empty states, 404, "coming soon". Good for startups, SaaS, agencies, apps and kids' brands.
+- **Icons**: small symbols beside words — features, steps, bullets, stats, contact details. Never as a hero picture.
+
+## One set, never a pile
+- A page uses one photographic mood (warm daylight, or moody low-key, not both) and at most one illustration style. Record the illustration style and icon family in the theme (set_theme illustrationStyle / iconPack) the first time you choose them, and keep to them afterwards.
+- Photos and illustrations can share a page (a photo hero, illustrated steps) but never the same row: a row of cards is all photos or all illustrations.
+- Same crop per row: gallery and card images at one aspect.
+
+## Placement
+- Hero: the strongest single picture; landscape for classic and split, a wide calm photo for fullbleed (text sits on it).
+- imageText: one picture that shows exactly what the text says.
+- Gallery: 6–9 photos with variety of distance (wide, medium, close-up).
+- Don't fill every section with a picture; stats, FAQ, testimonials and CTAs read better without.
+
+## Honesty and credit
+- Alt text says what the picture shows, in plain words.
+- Unsplash photos: keep the URL as given; credit the photographer in a caption or the footer.
+- Icons8 free assets require a credit: add "Icons by Icons8" / "Illustrations by Icons8" linking to https://icons8.com in the footer links.`,
   },
   animation: {
     title: "Animation",
@@ -116,3 +149,26 @@ export const SKILL_NAMES = Object.keys(SKILLS) as SkillName[];
 export function skillsForPrompt(): string {
   return SKILL_NAMES.map((n) => SKILLS[n].body).join("\n\n");
 }
+
+/**
+ * How to use Icons8's MCP tools well, condensed for this builder. Shown only
+ * when an Icons8 server is connected (its tools are named icons8__…).
+ */
+export const ICONS8_GUIDE = `## Icons8 (icons and illustrations)
+The Icons8 tools search a huge catalogue but have no taste: unfiltered search returns one idea in ten styles, and ranking puts brand logos above plain UI icons. Work like this:
+
+Icons
+1. List every concept the page needs first (features, steps, bullets, contact), then pick ONE pack for the whole site that covers them, and record it with set_theme iconPack "icons8:<apiCode>". If the site already has an iconPack, use only that pack — even for one extra icon. Use exact apiCodes: mono packs for small UI-sized icons that take the brand colour — m_outlined, ios7, fluent-systems-regular; colour packs for big marketing icons — color, plumpy, fluency, 3d-fluency. Never mix packs.
+2. Search once per concept, always with the platform set: search_icons(query, platform=<pack>, amount=10). Words that fail: search the object instead (warning → error, notification → bell, dark mode → moon, integration → plugin).
+3. Reject: brand logos (category Logos, names ending -logo) for UI concepts; machine parts for UI actions (gear from Industry); compound icons when a plain one exists; --v2/--v3 variants when the plain name exists; any icon whose name does not mean the concept. Prefer the plain name, then category Popular or User Interface.
+4. Use the free PNG URL directly in an icon field — never construct an id, it comes from search_icons:
+   https://img.icons8.com/?id=<id>&format=png&size=96&color=000000
+   For mono packs keep &color=000000: the site redraws such icons in its own colours. Colour packs: leave color out. Do not fetch SVG for icons.
+
+Illustrations (Ouch!)
+1. Pick the style by the surface and tone: warm and human → hand-drawn or sketch styles; neutral product → concept, tint, organic; corporate → 3d-business; premium → 3d-glassy, 3d-product; playful → kindy, 3d-kindy, mochi; developer → notion-line-art. Run one search on the business's own noun first ("bread loaf bakery") and read which styles actually draw it. Record the choice with set_theme illustrationStyle and keep to it.
+2. Every query carries the business's noun ("empty" + "pot" for no plants; "delivery" + "cake"). For an absence (empty, 404, offline) show the empty container, never the thing that is missing.
+3. Choose on previews, but a preview link is watermarked: never put it on the site. For each picture you keep, get the clean file (get_illustration_png_url size "standard" for cards, "hd" for a hero; or get_illustration_svg for flat and line styles), then save it with save_image — clean links expire within the hour — and use the URL save_image returns.
+4. Public sites use free-tier illustrations only (free_only: true), one picture per slot, never the same picture twice, same shape per row.
+
+Credit: free Icons8 assets need attribution — add "Icons by Icons8" (or "Illustrations by Icons8") linking to https://icons8.com to the footer links.`;

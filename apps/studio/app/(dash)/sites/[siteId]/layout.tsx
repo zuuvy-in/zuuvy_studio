@@ -36,6 +36,7 @@ export default async function SiteLayout({ children, params }: { children: React
           { href: `/sites/${site.id}/versions`, label: "Versions" },
           // Portfolio content is for portfolios (and a site that still shows it after a type change).
           ...(site.kind === "portfolio" || usesCollections ? [{ href: `/sites/${site.id}/content`, label: "Portfolio content" }] : []),
+          { href: `/sites/${site.id}/forms`, label: "Forms" },
           { href: `/sites/${site.id}/settings`, label: "Settings" },
         ]}
       />

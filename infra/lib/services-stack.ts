@@ -119,6 +119,8 @@ export class ServicesStack extends Stack {
       ...(cfg.unsplashKey ? { UNSPLASH_ACCESS_KEY: cfg.unsplashKey } : {}),
       ...(cfg.pexelsKey ? { PEXELS_API_KEY: cfg.pexelsKey } : {}),
       ...(cfg.mcpServers ? { ZSITE_MCP_SERVERS: cfg.mcpServers } : {}),
+      ...(cfg.imageGeneration ? { ZSITE_IMAGE_GENERATION: cfg.imageGeneration } : {}),
+      ...(cfg.importHosts ? { ZSITE_IMPORT_HOSTS: cfg.importHosts } : {}),
       // Pictures: the media library bucket, and the Bedrock image model.
       ASSETS_BUCKET: base.assets.bucketName,
       ASSETS_REGION: this.region,

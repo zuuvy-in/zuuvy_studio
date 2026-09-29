@@ -18,6 +18,7 @@ function A({ link, ctx, className }: { link: LinkT; ctx: RenderContext; classNam
   );
 }
 
+/** Blank lines separate paragraphs; a run of lines starting "- " or "• " is a list. Never HTML. */
 function Paragraphs({ text }: { text: string }) {
   return (
     <>
@@ -25,9 +26,19 @@ function Paragraphs({ text }: { text: string }) {
         .split(/\n\s*\n/)
         .map((p) => p.trim())
         .filter(Boolean)
-        .map((p, i) => (
-          <p key={i}>{p}</p>
-        ))}
+        .map((p, i) => {
+          const lines = p.split("\n").map((l) => l.trim());
+          if (lines.every((l) => /^[-•*]\s+/.test(l))) {
+            return (
+              <ul key={i} className="zs-list">
+                {lines.map((l, j) => (
+                  <li key={j}>{l.replace(/^[-•*]\s+/, "")}</li>
+                ))}
+              </ul>
+            );
+          }
+          return <p key={i}>{p}</p>;
+        })}
     </>
   );
 }
@@ -716,6 +727,134 @@ function Collection({ props, ctx, id }: P<"collection">) {
   );
 }
 
+function Field({ f }: { f: BlockProps<"form">["fields"][number] }) {
+  const common = { name: f.name, required: f.required, placeholder: f.placeholder };
+  if (f.type === "checkbox") {
+    return (
+      <label className="zs-check" data-width="full">
+        <input type="checkbox" name={f.name} value="1" required={f.required} /> <span>{f.label}</span>
+      </label>
+    );
+  }
+  return (
+    <label data-width={f.width}>
+      <span>
+        {f.label}
+        {!f.required && <span className="zs-optional"> (optional)</span>}
+      </span>
+      {f.type === "textarea" ? (
+        <textarea rows={4} {...common} />
+      ) : f.type === "select" ? (
+        <select name={f.name} required={f.required} defaultValue="">
+          <option value="" disabled>
+            {f.placeholder ?? "Choose…"}
+          </option>
+          {(f.options ?? []).map((o) => (
+            <option key={o}>{o}</option>
+          ))}
+        </select>
+      ) : (
+        <input type={f.type} {...common} autoComplete={f.type === "email" ? "email" : f.type === "tel" ? "tel" : f.name === "name" ? "name" : undefined} />
+      )}
+    </label>
+  );
+}
+
+function Form({ props, ctx, id }: P<"form">) {
+  const status = ctx.forms?.status?.section === id ? ctx.forms.status : undefined;
+  const toUrl = props.destination.kind === "url";
+  const live = Boolean(ctx.forms) || toUrl;
+  const form = status?.ok ? (
+    <p className="zs-ok" role="status">
+      {props.successMessage}
+    </p>
+  ) : (
+    <form
+      className="zs-form zs-site-form"
+      method={toUrl ? "get" : "post"}
+      action={toUrl ? (props.destination as { url: string }).url : live ? ctx.forms!.action : undefined}
+    >
+      {!toUrl && (
+        <>
+          <input type="hidden" name="_section" value={id} />
+          <input type="hidden" name="_page" value={ctx.forms?.page ?? "/"} />
+          <input type="hidden" name="_t" value={ctx.forms?.renderedAt ?? 0} />
+          {/* People never see this field; form-filling bots do. */}
+          <input type="text" name="_website" tabIndex={-1} autoComplete="off" className="zs-hp" aria-hidden="true" />
+        </>
+      )}
+      <div className="zs-form-fields">
+        {props.fields.map((f) => (
+          <Field key={f.name} f={f} />
+        ))}
+      </div>
+      {status?.error && (
+        <p className="zs-alert" role="alert">
+          {status.error}
+        </p>
+      )}
+      <button type={live ? "submit" : "button"} className="zs-btn zs-btn-primary">
+        {props.submitLabel}
+      </button>
+      {!live && <p className="zs-muted zs-small">Preview — the form sends on the live site.</p>}
+    </form>
+  );
+  if (props.layout === "split") {
+    return (
+      <Section id={id}>
+        <div className="zs-form-split">
+          <div>
+            <Heading heading={props.heading} subheading={props.subheading} />
+            {props.aside && <p className="zs-muted">{props.aside}</p>}
+          </div>
+          <div className="zs-card">{form}</div>
+        </div>
+      </Section>
+    );
+  }
+  return (
+    <Section id={id}>
+      <div className="zs-narrow">
+        <Heading heading={props.heading} subheading={props.subheading} center />
+        {props.layout === "card" ? <div className="zs-card">{form}</div> : form}
+      </div>
+    </Section>
+  );
+}
+
+function Table({ props, id }: P<"table">) {
+  return (
+    <Section id={id}>
+      <Heading heading={props.heading} subheading={props.subheading} center />
+      <div className={`zs-table-wrap zs-table-${props.style}`}>
+        <table className={`zs-table ${props.highlightFirst ? "zs-table-first" : ""}`}>
+          <thead>
+            <tr>
+              {props.columns.map((c, i) => (
+                <th key={i} scope="col">{c}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {props.rows.map((row, r) => (
+              <tr key={r}>
+                {props.columns.map((c, i) =>
+                  i === 0 && props.highlightFirst ? (
+                    <th key={i} scope="row" data-label={c}>{row[i] ?? ""}</th>
+                  ) : (
+                    <td key={i} data-label={c}>{row[i] ?? ""}</td>
+                  ),
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {props.caption && <p className="zs-muted zs-small zs-table-caption">{props.caption}</p>}
+      </div>
+    </Section>
+  );
+}
+
 const COMPONENTS = {
   hero: Hero,
   features: Features,
@@ -731,6 +870,8 @@ const COMPONENTS = {
   logos: Logos,
   marquee: Marquee,
   steps: Steps,
+  form: Form,
+  table: Table,
   collection: Collection,
 } as const;
 

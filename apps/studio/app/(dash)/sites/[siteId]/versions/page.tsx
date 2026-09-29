@@ -11,8 +11,9 @@ import { generateAction, planAction, importRevisionAction, publishAction } from 
 
 export const metadata = { title: "Versions" };
 
-export default async function VersionsPage({ params }: { params: Promise<{ siteId: string }> }) {
+export default async function VersionsPage({ params, searchParams }: { params: Promise<{ siteId: string }>; searchParams: Promise<{ prompt?: string }> }) {
   const { siteId } = await params;
+  const { prompt } = await searchParams;
   const session = await requireSession();
   const ai = aiStatus();
   const { site, versions, publications } = await withTenant(session.tenant.id, async (tx) => ({
@@ -25,7 +26,7 @@ export default async function VersionsPage({ params }: { params: Promise<{ siteI
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div className="min-w-0 space-y-6">
-        <Composer action={generateAction} plan={planAction} siteId={site.id} baseNumber={latest.number} aiReady={ai.ready} setupHint={ai.hint} accept={ATTACHMENT_ACCEPT} />
+        <Composer action={generateAction} plan={planAction} siteId={site.id} baseNumber={latest.number} aiReady={ai.ready} setupHint={ai.hint} accept={ATTACHMENT_ACCEPT} initialPrompt={typeof prompt === "string" ? prompt.slice(0, 1000) : undefined} />
 
         <Card>
           <CardHeader title="All versions" description="Every change is kept. Open one to preview it, see what changed, publish it or bring it back." />

@@ -10,6 +10,7 @@ import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "no
 import { promisify } from "node:util";
 import { normaliseSubdomain } from "@zsite/core";
 import { type Tx, UserError, isUniqueViolation, withGlobal, withTenant } from "./db";
+import { queueEmail, verifyEmailMessage } from "./email";
 import { randomToken } from "./secrets";
 
 const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, len: number, opts: object) => Promise<Buffer>;
@@ -102,7 +103,18 @@ export async function login(email: string, password: string): Promise<{ userId: 
 
 const DUMMY_HASH = hashPassword("not-a-real-password");
 
-export type SignupInput = { businessName: string; name: string; email: string; password: string };
+export type SignupInput = {
+  businessName: string;
+  name: string;
+  email: string;
+  password: string;
+  /**
+   * Only for accounts the platform itself vouches for (an admin adding a
+   * colleague, the seed and superadmin scripts). Everyone signing up proves the
+   * address with a link first — see sendEmailVerification.
+   */
+  emailVerified?: boolean;
+};
 
 export async function signup(input: SignupInput): Promise<{ userId: string; tenantId: string }> {
   const businessName = input.businessName.trim();
@@ -123,8 +135,8 @@ export async function signup(input: SignupInput): Promise<{ userId: string; tena
     }
     const tenantId = await createTenant(tx, businessName);
     const user = await tx.get<{ id: string }>(
-      "insert into users (email, name, password_hash) values ($1, $2, $3) returning id",
-      [email, name, passwordHash],
+      "insert into users (email, name, password_hash, email_verified_at) values ($1, $2, $3, $4) returning id",
+      [email, name, passwordHash, input.emailVerified ? new Date() : null],
     );
     await tx.query("insert into memberships (tenant_id, user_id, role) values ($1, $2, 'owner')", [tenantId, user.id]);
     return { userId: user.id, tenantId };
@@ -146,4 +158,66 @@ async function createTenant(tx: Tx, name: string): Promise<string> {
     }
   }
   throw new Error("could not allocate a tenant slug");
+}
+
+// ---------------------------------------------------------------------------
+// Email verification
+// ---------------------------------------------------------------------------
+
+const VERIFY_DAYS = 3;
+
+/** Whether this person has proved they own their email address. */
+export async function emailVerified(userId: string): Promise<boolean> {
+  const row = await withGlobal((tx) => tx.one<{ at: Date | null }>("select email_verified_at as at from users where id = $1", [userId]));
+  return Boolean(row?.at);
+}
+
+/**
+ * Email a verification link. Any earlier link stops working, so the newest
+ * email is the one that counts. Queued with the business's outbox, in its
+ * transaction, like every other email.
+ */
+export async function sendEmailVerification(tenantId: string, userId: string): Promise<{ sent: boolean }> {
+  const token = randomToken(32);
+  return withTenant(tenantId, async (tx) => {
+    const user = await tx.one<{ email: string; name: string; at: Date | null }>(
+      "select email, name, email_verified_at as at from users where id = $1",
+      [userId],
+    );
+    if (!user || user.at) return { sent: false };
+    await tx.query("delete from email_verifications where user_id = $1", [userId]);
+    await tx.query("insert into email_verifications (token_hash, user_id, email, expires_at) values ($1, $2, $3, now() + make_interval(days => $4))", [
+      sha256(token),
+      userId,
+      user.email,
+      VERIFY_DAYS,
+    ]);
+    await queueEmail(tx, verifyEmailMessage(user.email, user.name, token));
+    return { sent: true };
+  });
+}
+
+/** Redeem a link from the email. Answers who was verified, or why not. */
+export async function verifyEmail(token: string): Promise<{ userId: string } | { error: string }> {
+  if (!/^[A-Za-z0-9_-]{20,100}$/.test(token)) return { error: "That link is not complete — open it straight from the email." };
+  return withGlobal(async (tx) => {
+    const row = await tx.one<{ user_id: string; email: string; expired: boolean }>(
+      "select user_id, email, expires_at < now() as expired from email_verifications where token_hash = $1",
+      [sha256(token)],
+    );
+    if (!row) return { error: "That link has already been used or a newer one was sent. Sign in to send a fresh one." };
+    if (row.expired) return { error: "That link has expired. Sign in and we will send a fresh one." };
+    const done = await tx.one<{ id: string }>(
+      "update users set email_verified_at = coalesce(email_verified_at, now()) where id = $1 and email = $2 returning id",
+      [row.user_id, row.email],
+    );
+    await tx.query("delete from email_verifications where user_id = $1", [row.user_id]);
+    if (!done) return { error: "Your email address has changed since that link was sent. Sign in to send a fresh one." };
+    return { userId: row.user_id };
+  });
+}
+
+/** Test and admin helper: mark an address as proved. */
+export async function markEmailVerified(userId: string): Promise<void> {
+  await withGlobal((tx) => tx.query("update users set email_verified_at = coalesce(email_verified_at, now()) where id = $1", [userId]));
 }

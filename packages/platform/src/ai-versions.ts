@@ -27,9 +27,10 @@ import { productCategories } from "./catalog";
 import { config } from "./config";
 import { UserError, withTenant } from "./db";
 import { getIntegration } from "./integrations";
-import { generateAsset, generatedImage, imagesAvailable, listAssets } from "./media";
+import { generateAsset, generatedImage, imageGenerationEnabled, imagesAvailable, importImage, listAssets } from "./media";
 import { fetchReference } from "./references";
 import { createVersion, getSite, getVersion, getVersionByNumber, latestVersion, recordAiColors } from "./sites";
+import { applyTableOps, listSiteTables } from "./tables";
 import { recordUsage } from "./usage";
 
 export type GenerateInput = {
@@ -58,7 +59,7 @@ async function prepare(tenantId: string, input: Omit<GenerateInput, "prompt"> & 
   if (prompt.length < 3) throw new UserError("Describe the change you want.");
   if (prompt.length > 4000) throw new UserError("Keep the request under 4,000 characters.");
 
-  const { base, context, brand } = await withTenant(tenantId, async (tx) => {
+  const { base, context, brand, tables } = await withTenant(tenantId, async (tx) => {
     const site = await getSite(tx, input.siteId);
     const base = await getVersion(tx, input.siteId, input.baseVersionId);
     if (!base.tree) throw new UserError("AI edits work on managed versions; this one is code.");
@@ -66,8 +67,10 @@ async function prepare(tenantId: string, input: Omit<GenerateInput, "prompt"> & 
     const categories = await productCategories(tx);
     const zuuvy = await getIntegration(tx, "zuuvy");
     const media = await listAssets(tx, 30);
+    const tables = await listSiteTables(tx, input.siteId);
     return {
       base,
+      tables,
       brand: site.brand,
       context: {
         businessName: tenant.name,
@@ -83,15 +86,23 @@ async function prepare(tenantId: string, input: Omit<GenerateInput, "prompt"> & 
   const capabilities: ToolCapabilities = {
     lockedTheme: lockedThemeFields(brand),
     imagePalette: paletteForImages(base.tree, brand),
-    ...(imagesAvailable()
+    ...(imageGenerationEnabled()
       ? {
           generateImage: async (req) =>
             generatedImage(await generateAsset(tenantId, { ...req, siteId: input.siteId, userId: input.userId })),
           maxImages: 4,
         }
       : {}),
+    ...(imagesAvailable()
+      ? {
+          importImage: async (req) => ({
+            url: (await importImage(tenantId, { ...req, siteId: input.siteId, userId: input.userId })).url,
+          }),
+        }
+      : {}),
     fetchReference,
     maxReferences: 3,
+    tables: tables.map((t) => ({ key: t.key, name: t.name, columns: t.columns, rows: t.rows ?? 0 })),
     ...extra,
   };
 
@@ -170,10 +181,14 @@ export async function generateVersion(
         dataOperations: result.dataOperations?.length ?? 0,
         // Held for the owner: applied only when they allow them (applyProposals).
         proposals: result.proposals ?? [],
+        // Tables the AI asked to delete: the owner decides (deleteProposedTable).
+        tableDeletes: result.tableDeletes ?? [],
       },
       userId: input.userId,
     });
     await recordAiColors(tx, input.siteId, tree);
+    // Tables the forms need exist the moment the version does; nothing is created by a run that failed.
+    if (result.tableOps?.length) await applyTableOps(tx, input.siteId, result.tableOps);
     await recordUsage(tx, {
       userId: input.userId,
       siteId: input.siteId,

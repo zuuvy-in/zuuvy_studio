@@ -33,7 +33,18 @@ export type EditState = {
   proposals: Proposal[];
   /** Why picture generation failed in this turn, if it did — it is not retried. */
   imageError?: string;
+  /** Tables to create or change, applied when the version is saved. */
+  tableOps: TableOpSpec[];
+  /** Tables the AI wants gone: held for the owner, who sees how many rows each holds. */
+  tableDeletes: { key: string; reason: string }[];
 };
+
+export type TableColumnSpec = { key: string; label: string; type: "text" | "email" | "tel" | "number" | "textarea" | "select" | "checkbox" | "date" };
+export type TableOpSpec =
+  | { op: "create"; key: string; name: string; columns: TableColumnSpec[]; notify?: boolean }
+  | { op: "update"; key: string; name?: string; columns?: TableColumnSpec[]; notify?: boolean };
+/** A table the site already has, as the AI is told about it. */
+export type TableSummary = { key: string; name: string; columns: TableColumnSpec[]; rows: number };
 
 export type Proposal = { op: DataOp; description: string };
 
@@ -62,6 +73,11 @@ export type ReferenceSummary = {
  */
 export type ToolCapabilities = {
   generateImage?: (req: { prompt: string; aspect: ImageAspect; style: ImageStyle }) => Promise<GeneratedImage>;
+  /**
+   * Copy a picture into the media library and get a permanent URL: an asset
+   * service's download link (from an allowed host) or an SVG it handed over.
+   */
+  importImage?: (req: { url?: string; svg?: string; alt: string }) => Promise<{ url: string }>;
   fetchReference?: (url: string) => Promise<ReferenceSummary>;
   /**
    * Theme fields the owner fixed in the brand kit (`colors.primary`, `fonts.body`,
@@ -82,6 +98,8 @@ export type ToolCapabilities = {
   dataTools?: boolean;
   /** A store: the cart, checkout and account presentation can be set (set_commerce). */
   commerceTools?: boolean;
+  /** The site's tables (for forms). Present = the table tools are offered. */
+  tables?: TableSummary[];
   /** Per edit, so one prompt cannot spend a month of image budget. */
   maxImages?: number;
   maxReferences?: number;
@@ -146,7 +164,7 @@ export function outline(tree: SiteTree): string {
 }
 
 export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, initialData: SiteData = {}) {
-  const state: EditState = { tree: initial, operations: [], images: 0, references: 0, data: initialData, dataOperations: [], proposals: [] };
+  const state: EditState = { tree: initial, operations: [], images: 0, references: 0, data: initialData, dataOperations: [], proposals: [], tableOps: [], tableDeletes: [] };
   const allowed = new Set(caps.allowOverwrite ?? []);
 
   /** Apply a data op now, or — when it changes what exists — keep it for the owner to allow. */
@@ -188,6 +206,45 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
     );
   };
 
+  /** Tables as they will be after this edit: the site's own, plus what was created or changed so far. */
+  const tablesNow = (): Map<string, { name: string; columns: TableColumnSpec[]; rows: number }> => {
+    const map = new Map((caps.tables ?? []).map((t) => [t.key, { name: t.name, columns: t.columns, rows: t.rows }]));
+    for (const d of state.tableDeletes) map.delete(d.key);
+    for (const op of state.tableOps) {
+      const was = map.get(op.key);
+      if (op.op === "create") map.set(op.key, { name: op.name, columns: op.columns, rows: was?.rows ?? 0 });
+      else if (was) map.set(op.key, { name: op.name ?? was.name, columns: op.columns ?? was.columns, rows: was.rows });
+    }
+    return map;
+  };
+
+  /** Text is text: markup typed into a prop would show on the page as code. */
+  const checkNoHtml = (value: unknown, path = "props") => {
+    if (typeof value === "string") {
+      if (/<\/?(?:[a-z][a-z0-9]*)(?:\s[^<>]*)?\/?>/i.test(value)) {
+        throw new ToolInputError(
+          `${path} contains HTML. Text fields are plain text and show exactly as typed — use a table block for tables, a form block for forms, and blank lines or "- " lines for paragraphs and lists.`,
+        );
+      }
+      return;
+    }
+    if (Array.isArray(value)) value.forEach((v, i) => checkNoHtml(v, `${path}[${i}]`));
+    else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) checkNoHtml(v, `${path}.${k}`);
+  };
+
+  /** A form that stores answers must point at a table that exists, and ask only for its columns. */
+  const checkForm = (type: string, props: unknown) => {
+    if (type !== "form" || !props || typeof props !== "object") return;
+    const p = props as { destination?: { kind?: string; table?: string }; fields?: { name?: string }[] };
+    if (p.destination?.kind !== "table" || !p.destination.table) return;
+    if (!caps.tables) throw new ToolInputError("Forms that store answers are not available here; send them to a URL instead.");
+    const table = tablesNow().get(p.destination.table);
+    if (!table) throw new ToolInputError(`There is no table "${p.destination.table}". Create it first with create_table, with a column for each field.`);
+    const keys = new Set(table.columns.map((c) => c.key));
+    const missing = (p.fields ?? []).map((f) => f.name ?? "").filter((n) => n && !keys.has(n));
+    if (missing.length) throw new ToolInputError(`The table "${p.destination.table}" has no column for ${missing.join(", ")}. Add them with update_table first.`);
+  };
+
   const tools: SiteTool[] = [
     siteTool({
       name: "view_site",
@@ -213,6 +270,8 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
           throw new ToolInputError("Collection sections are for portfolio sites. Use features, gallery, testimonials or other blocks here.");
         }
         checkIcons(i.props);
+        checkNoHtml(i.props);
+        checkForm(i.type, i.props);
         const before = new Set(state.tree.pages.flatMap((p) => p.sections.map((s) => s.id)));
         const out = apply(
           { op: "addSection", page: i.page, type: i.type as BlockType, props: i.props, ...(i.after ? { after: i.after } : {}), ...(i.index !== undefined ? { index: i.index } : {}) },
@@ -237,6 +296,9 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
       inputSchema: z.object({ section: z.string(), props: z.record(z.string(), z.unknown()) }),
       run: (i) => {
         checkIcons(i.props);
+        checkNoHtml(i.props);
+        const section = state.tree.pages.flatMap((p) => p.sections).find((x) => x.id === i.section);
+        if (section) checkForm(section.type, { ...(section.props as object), ...i.props });
         return apply({ op: "updateSection", section: i.section, props: i.props });
       },
     }),
@@ -285,6 +347,11 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
           .enum(MOTIONS)
           .optional()
           .describe("Animation: none (still), subtle (sections ease in, cards lift — the default), lively (bigger movement, drifting hero image)"),
+        iconPack: z
+          .string()
+          .optional()
+          .describe('The site\'s one icon family, recorded so later edits match: "lucide", or "icons8:<pack apiCode>" once you pick an Icons8 pack'),
+        illustrationStyle: z.string().optional().describe("The site's one illustration style (an Icons8 Ouch style id), recorded when you first pick one"),
       }),
       run: (i) => {
         const locked = new Set(caps.lockedTheme ?? []);
@@ -322,6 +389,62 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
       run: (i) => apply({ op: "setFooter", ...i }),
     }),
   ];
+
+  if (caps.tables) {
+    const column = z.object({
+      key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/).describe("lowercase_with_underscores; a form field's name"),
+      label: z.string().max(80),
+      type: z.enum(["text", "email", "tel", "number", "textarea", "select", "checkbox", "date"]).default("text"),
+    });
+    const key = z.string().regex(/^[a-z][a-z0-9_]{0,39}$/);
+    tools.push(
+      siteTool({
+        name: "list_tables",
+        description: "The site's tables (where forms store answers), with their columns and how many rows each holds, including changes made so far in this edit.",
+        inputSchema: z.object({}),
+        run: () => JSON.stringify([...tablesNow()].map(([k, t]) => ({ key: k, ...t }))),
+      }),
+      siteTool({
+        name: "create_table",
+        description:
+          "Create a table for a form's answers — contact enquiries, bookings, quote requests, sign-ups. One column per form field (same keys). Then add a form block whose destination is this table. The owner reads the answers in the studio and is emailed about new ones when notify is on.",
+        inputSchema: z.object({ key, name: z.string().max(80), columns: z.array(column).min(1).max(30), notify: z.boolean().default(true) }),
+        run: (i) => {
+          if (tablesNow().has(i.key)) throw new ToolInputError(`A table "${i.key}" already exists; change it with update_table.`);
+          const keys = new Set<string>();
+          for (const c of i.columns) {
+            if (keys.has(c.key)) throw new ToolInputError(`Column ${c.key} is listed twice.`);
+            keys.add(c.key);
+          }
+          state.tableOps.push({ op: "create", key: i.key, name: i.name, columns: i.columns, notify: i.notify });
+          return JSON.stringify({ ok: true, table: i.key, note: "Created when this version is saved. Now add a form block with destination { kind: 'table', table: '" + i.key + "' }." });
+        },
+      }),
+      siteTool({
+        name: "update_table",
+        description:
+          "Rename a table, change its columns (send the full list; removing a column hides it but keeps what was already sent), or turn email notifications on or off.",
+        inputSchema: z.object({ key, name: z.string().max(80).optional(), columns: z.array(column).min(1).max(30).optional(), notify: z.boolean().optional() }),
+        run: (i) => {
+          if (!tablesNow().has(i.key)) throw new ToolInputError(`There is no table "${i.key}". list_tables shows what exists.`);
+          state.tableOps.push({ op: "update", key: i.key, ...(i.name ? { name: i.name } : {}), ...(i.columns ? { columns: i.columns } : {}), ...(i.notify !== undefined ? { notify: i.notify } : {}) });
+          return JSON.stringify({ ok: true });
+        },
+      }),
+      siteTool({
+        name: "delete_table",
+        description:
+          "Ask to delete a table and every answer in it. It is never deleted by you: the owner is asked and sees how many answers would be lost. Remove or repoint any form that uses it as well.",
+        inputSchema: z.object({ key, reason: z.string().max(200) }),
+        run: (i) => {
+          const t = tablesNow().get(i.key);
+          if (!t) throw new ToolInputError(`There is no table "${i.key}".`);
+          state.tableDeletes.push({ key: i.key, reason: i.reason });
+          return JSON.stringify({ ok: true, proposed: true, note: `Held for the owner (${t.rows} answers). Mention it in your summary.` });
+        },
+      }),
+    );
+  }
 
   if (caps.commerceTools) tools.push(
     siteTool({
@@ -375,6 +498,33 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
       run: (i) => dataOp({ op: "moveItem", collection: i.collection, id: i.id, index: i.index }),
     }),
   );
+
+  if (caps.importImage) {
+    const importImage = caps.importImage;
+    let saved = 0;
+    tools.push(
+      siteTool({
+        name: "save_image",
+        description:
+          "Copy an illustration or icon into the site's media library and get a permanent https URL to put in image fields. Use it for Icons8 illustrations (their download links expire within the hour) and SVGs an asset tool returned. Never for Unsplash photos — use their URL exactly as search_photos gave it.",
+        inputSchema: z.object({
+          url: z.string().optional().describe("The asset service's download link"),
+          svg: z.string().optional().describe("SVG markup an asset tool returned"),
+          alt: z.string().max(300).describe("What the picture shows, for people who cannot see it"),
+        }),
+        run: async (i) => {
+          if (!i.url && !i.svg) throw new ToolInputError("Give the download url or the svg.");
+          if (++saved > 12) throw new ToolInputError("That is enough pictures for one edit; reuse ones already saved.");
+          try {
+            const r = await importImage({ url: i.url, svg: i.svg, alt: i.alt });
+            return JSON.stringify({ ok: true, url: r.url });
+          } catch (e) {
+            throw new ToolInputError((e as Error).message);
+          }
+        },
+      }),
+    );
+  }
 
   if (caps.generateImage) {
     const generate = caps.generateImage;

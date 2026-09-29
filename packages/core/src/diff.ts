@@ -45,6 +45,8 @@ export const BLOCK_LABELS: Record<Section["type"], string> = {
   logos: "Logos",
   marquee: "Marquee",
   steps: "Steps",
+  form: "Form",
+  table: "Table",
   collection: "Collection",
 };
 

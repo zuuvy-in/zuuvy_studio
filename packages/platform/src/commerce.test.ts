@@ -43,8 +43,8 @@ let site: { tenantId: string; siteId: string };
 
 beforeAll(async () => {
   db = await createTestDatabase();
-  a = await signup({ businessName: "Meera Clothing", name: "Meera", email: "meera@clothes.test", password: "password-m" });
-  b = await signup({ businessName: "Other Shop", name: "Otto", email: "otto@other.test", password: "password-o" });
+  a = await signup({ businessName: "Meera Clothing", name: "Meera", email: "meera@clothes.test", password: "password-m", emailVerified: true });
+  b = await signup({ businessName: "Other Shop", name: "Otto", email: "otto@other.test", password: "password-o", emailVerified: true });
   const shop = await withTenant(a.tenantId, (tx) =>
     createSite(tx, { name: "Meera", subdomain: "meera-shop", templateId: "store-classic", templateInput: { businessName: "Meera" }, userId: a.userId }),
   );

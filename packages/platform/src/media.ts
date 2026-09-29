@@ -4,6 +4,7 @@
  * public object; the AI is told what is in the library so it places the
  * business's own photos before generating anything.
  */
+import { fetchAssetBytes } from "./references";
 import { BedrockClient, ListFoundationModelsCommand, ListInferenceProfilesCommand } from "@aws-sdk/client-bedrock";
 import {
   BedrockRuntimeClient,
@@ -394,6 +395,96 @@ export async function generateAsset(
 export function imagesAvailable(): boolean {
   loadRootEnv();
   return Boolean(storage()) && process.env.ZSITE_IMAGES !== "0";
+}
+
+/**
+ * Generating pictures with a model is off unless ZSITE_IMAGE_GENERATION=1:
+ * sites use real photography (Unsplash) and drawn illustrations and icons
+ * (Icons8) instead, which read as more genuine and cost nothing per image.
+ */
+export function imageGenerationEnabled(): boolean {
+  loadRootEnv();
+  return imagesAvailable() && process.env.ZSITE_IMAGE_GENERATION === "1";
+}
+
+/** Hosts a picture may be copied from into the media library. */
+export function importHosts(): string[] {
+  loadRootEnv();
+  return (process.env.ZSITE_IMPORT_HOSTS || "img.icons8.com,*.icons8.com")
+    .split(",")
+    .map((h) => h.trim())
+    .filter(Boolean);
+}
+
+const SVG_MAX = 600_000;
+
+/**
+ * An SVG goes into the media library only when it is plainly a drawing:
+ * nothing that runs, nothing that loads from elsewhere. Anything else is
+ * refused rather than "cleaned", because a half-cleaned SVG is worse than none.
+ */
+export function safeSvg(text: string): string {
+  const svg = text.trim();
+  if (svg.length > SVG_MAX) throw new UserError("That drawing is too large.");
+  if (!/^(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(svg)) throw new UserError("That is not an SVG drawing.");
+  const bad = [
+    /<script/i,
+    /<foreignObject/i,
+    /<!ENTITY/i,
+    /<iframe|<embed|<object/i,
+    /\son[a-z]+\s*=/i,
+    /javascript:/i,
+    /(?:xlink:)?href\s*=\s*["'](?!#|data:image\/(?:png|jpeg|webp|gif);base64,)/i,
+    /url\(\s*["']?(?!#)/i,
+    /@import/i,
+  ].find((r) => r.test(svg));
+  if (bad) throw new UserError("That drawing contains scripts or links to other files, so it cannot be used.");
+  return svg;
+}
+
+/**
+ * Copy a picture into the business's media library: from an allowed asset
+ * host (an Icons8 illustration's short-lived download link), or an SVG the
+ * AI was handed by an asset service. Returns the stored asset.
+ */
+export async function importImage(
+  tenantId: string,
+  input: { url?: string; svg?: string; alt: string; siteId?: string | null; userId: string | null },
+): Promise<Asset> {
+  const store = requireStorage();
+  let bytes: Uint8Array;
+  let type: string;
+  let ext: string;
+  if (input.svg) {
+    bytes = new TextEncoder().encode(safeSvg(input.svg));
+    type = "image/svg+xml";
+    ext = "svg";
+  } else if (input.url) {
+    const got = await fetchAssetBytes(input.url, importHosts());
+    if (got.contentType === "image/svg+xml") {
+      bytes = new TextEncoder().encode(safeSvg(new TextDecoder().decode(got.bytes)));
+      type = "image/svg+xml";
+      ext = "svg";
+    } else {
+      const kind = sniffImage(got.bytes);
+      if (!kind) throw new UserError("That address did not return a picture.");
+      bytes = got.bytes;
+      type = kind.type;
+      ext = kind.ext;
+    }
+  } else {
+    throw new UserError("Give a picture address or an SVG.");
+  }
+  const key = objectKey(tenantId, ext);
+  const url = await store.put(key, bytes, type);
+  const size = type === "image/svg+xml" ? null : imageSize(bytes);
+  return withTenant(tenantId, (tx) =>
+    tx.get<Asset>(
+      `insert into assets (tenant_id, site_id, storage_key, url, kind, content_type, bytes, width, height, alt, created_by)
+       values (app_tenant(), $1, $2, $3, 'upload', $4, $5, $6, $7, $8, $9) returning ${COLUMNS}`,
+      [input.siteId ?? null, key, url, type, bytes.length, size?.width ?? null, size?.height ?? null, input.alt.trim().slice(0, 300), input.userId],
+    ),
+  );
 }
 
 export function generatedImage(a: Asset): GeneratedImage {
