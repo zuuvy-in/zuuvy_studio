@@ -1,9 +1,10 @@
 "use client";
 
 import type { Plan } from "@zsite/platform";
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useRef, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
 import type { ActionState } from "@/lib/actions";
+import { type FeedbackTarget, FeedbackLayer } from "./feedback";
 import { Message, Spinner, SubmitButton } from "./forms";
 import { Icon, buttonClass, cx } from "./ui";
 
@@ -247,7 +248,19 @@ export function Composer({
   );
 }
 
-export function PreviewFrame({ base, pages, title }: { base: string; pages: { path: string; title: string }[]; title: string }) {
+export function PreviewFrame({
+  base,
+  pages,
+  title,
+  feedback,
+}: {
+  base: string;
+  pages: { path: string; title: string }[];
+  title: string;
+  /** Right-click notes on the preview, sent to the AI as the next version. */
+  feedback?: FeedbackTarget;
+}) {
+  const frame = useRef<HTMLIFrameElement>(null);
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const [path, setPath] = useState("/");
   const src = `${base}${path === "/" ? "/" : path}`;
@@ -277,8 +290,9 @@ export function PreviewFrame({ base, pages, title }: { base: string; pages: { pa
           <Icon name="external" className="h-3.5 w-3.5" />
         </a>
       </div>
-      <div className="flex justify-center bg-slate-100">
-        <iframe key={src} src={src} title={title} className={cx("h-[70vh] min-h-[480px] bg-white transition-all", device === "mobile" ? "my-4 w-[390px] rounded-lg shadow-lg ring-1 ring-slate-200" : "w-full")} />
+      <div className="relative flex flex-col items-center bg-slate-100">
+        <iframe ref={frame} key={src} src={src} title={title} className={cx("h-[70vh] min-h-[480px] bg-white transition-all", device === "mobile" ? "my-4 w-[390px] rounded-lg shadow-lg ring-1 ring-slate-200" : "w-full")} />
+        {feedback && <FeedbackLayer target={feedback} frame={frame} />}
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { SitePage, linkRewriter } from "@zsite/runtime";
 import "@zsite/runtime/styles.css";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { FeedbackBridge } from "@/components/feedback-bridge";
 import { requireSession } from "@/lib/session";
 
 export const metadata: Metadata = { robots: { index: false } };
@@ -26,6 +27,8 @@ export default async function PreviewPage({ params }: { params: Promise<{ siteId
   });
   const base = `/preview/${siteId}/${number}`;
   return (
+    <>
+    <FeedbackBridge base={base} />
     <SitePage
       tree={data.tree}
       path={(path ?? []).join("/")}
@@ -62,5 +65,6 @@ export default async function PreviewPage({ params }: { params: Promise<{ siteId
           : {}),
       }}
     />
+    </>
   );
 }

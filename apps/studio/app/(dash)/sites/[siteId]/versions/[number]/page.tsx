@@ -163,7 +163,12 @@ export default async function VersionPage({ params }: { params: Promise<{ siteId
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">
           {version.tree ? (
-            <PreviewFrame base={`/preview/${site.id}/${version.number}`} pages={pages} title={`Preview of version ${version.number}`} />
+            <PreviewFrame
+              base={`/preview/${site.id}/${version.number}`}
+              pages={pages}
+              title={`Preview of version ${version.number}`}
+              feedback={{ siteId: site.id, baseNumber: version.number, action: generateAction, aiReady: ai.ready }}
+            />
           ) : (
             <Card className="p-8 text-sm text-slate-600">This is a code version ({version.git_ref}); previews of code versions come with Git import.</Card>
           )}
