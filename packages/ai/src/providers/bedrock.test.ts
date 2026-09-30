@@ -133,9 +133,46 @@ describe("Claude through Bedrock", () => {
     await editSite({ tree: tree(), prompt: "Teal", context, runner: bedrockProvider({ client: nova.client }) });
     expect(nova.requests[0]!.inferenceConfig).toMatchObject({ temperature: 0 });
   });
+
+  it("keeps a reasoning model's unsigned thinking out of the history it sends back", async () => {
+    const thinking = { reasoningContent: { reasoningText: { text: "The user wants teal; call set_theme." } } };
+    const b = fakeBedrock([
+      {
+        stopReason: "tool_use",
+        output: { message: { role: "assistant", content: [thinking, { toolUse: { toolUseId: "t1", name: "set_theme", input: { colors: { primary: "#0f766e" } } } }] } },
+      } as never,
+      done("Teal."),
+    ]);
+    const r = await editSite({ tree: tree(), prompt: "Teal", context, model: "global.moonshotai.kimi-k3", fallbackModel: "", runner: bedrockProvider({ client: b.client }) });
+    expect(r.operations).toHaveLength(1);
+    const sentBack = b.requests[1]!.messages!.find((m) => m.role === "assistant")!;
+    expect(sentBack.content!.some((c) => "reasoningContent" in c)).toBe(false);
+    expect(sentBack.content!.some((c) => "toolUse" in c)).toBe(true);
+  });
+
+  it("treats OpenAI, xAI and Kimi models like Claude: no sampling parameters, a large budget", async () => {
+    for (const model of ["global.openai.gpt-5.5", "in.openai.gpt-5.6-terra", "global.xai.grok-4.7", "global.moonshotai.kimi-k3"]) {
+      const b = fakeBedrock([toolUse("t1", "set_theme", { colors: { primary: "#0f766e" } }), done("Teal.")]);
+      await editSite({ tree: tree(), prompt: "Teal", context, model, fallbackModel: "", runner: bedrockProvider({ client: b.client }) });
+      expect(b.requests[0]!.inferenceConfig, model).toEqual({ maxTokens: 16000 });
+    }
+    const lite = fakeBedrock([toolUse("t1", "set_theme", { colors: { primary: "#0f766e" } }), done("Teal.")]);
+    await editSite({ tree: tree(), prompt: "Teal", context, model: "global.amazon.nova-2-lite-v1:0", runner: bedrockProvider({ client: lite.client }) });
+    expect(lite.requests[0]!.inferenceConfig).toMatchObject({ temperature: 0, maxTokens: 5000 });
+  });
 });
 
 describe("Claude not yet enabled on the account", () => {
+  it("says a payment method is missing when Marketplace refuses for that", async () => {
+    const client = {
+      async send(): Promise<ConverseCommandOutput> {
+        throw Object.assign(new Error("Model access is denied due to INVALID_PAYMENT_INSTRUMENT:A valid payment instrument must be provided.. Your AWS Marketplace subscription for this model cannot be completed at this time."), { name: "AccessDeniedException" });
+      },
+    };
+    const err = await editSite({ tree: tree(), prompt: "x", context, model: "global.anthropic.claude-sonnet-5", fallbackModel: "", runner: bedrockProvider({ client, region: "ap-south-1" }) }).catch((e) => e);
+    expect(err.message).toMatch(/valid payment method/);
+  });
+
   it("says to open it once in the playground when AWS names Marketplace", async () => {
     const client = {
       async send(): Promise<ConverseCommandOutput> {
@@ -143,6 +180,7 @@ describe("Claude not yet enabled on the account", () => {
       },
     };
     const err = await editSite({ tree: tree(), prompt: "x", context, model: "global.anthropic.claude-sonnet-5", runner: bedrockProvider({ client, region: "ap-south-1" }) }).catch((e) => e);
-    expect(err.message).toMatch(/not been enabled on this AWS account yet/);
+    expect(err.message).toMatch(/has not subscribed to it yet/);
+    expect(err.message).toMatch(/aws-marketplace:Subscribe/);
   });
 });

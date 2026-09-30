@@ -88,9 +88,14 @@ function explainOnly(e: unknown, model: string, region: string): never {
     case "CredentialsProviderError":
       throw new AgentError("No AWS credentials found for Bedrock. Set AWS_PROFILE or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (in production, the service's IAM role).");
     case "AccessDeniedException":
+      if (/INVALID_PAYMENT_INSTRUMENT|payment instrument/i.test(err.message)) {
+        throw new AgentError(
+          `${model} is sold through AWS Marketplace, and AWS will not subscribe this account until it has a valid payment method (credits alone do not count). Add a card under Billing → Payment preferences in the AWS console, wait a few minutes and try again — or use an Amazon model (Nova), which needs no subscription.`,
+        );
+      }
       if (/marketplace/i.test(err.message)) {
         throw new AgentError(
-          `${model} has not been enabled on this AWS account yet. Open it once in the Bedrock playground (${region}) as an administrator — that accepts its AWS Marketplace terms for the whole account — then try again.`,
+          `${model} is sold through AWS Marketplace and this AWS account has not subscribed to it yet. Either run it once in the Bedrock playground (${region}) as an administrator — that subscribes the whole account — or give the caller aws-marketplace:ViewSubscriptions and aws-marketplace:Subscribe (the deployed services have them) so its first call subscribes. Allow a few minutes after either, then try again.`,
         );
       }
       if (/use case|use-case|form/i.test(err.message)) {
@@ -171,7 +176,12 @@ export function bedrockProvider(opts: BedrockOptions = {}): Provider {
   const client = opts.client ?? new BedrockRuntimeClient({ region });
 
   return async ({ system, user, tools, model, maxIterations, attachments = [] }) => {
-    const isClaude = /anthropic\.claude/.test(model);
+    // Nova (and the older open models) are tuned here: near-greedy sampling and a
+    // modest output budget. Current frontier models — Claude, OpenAI's, xAI's,
+    // Kimi — reason before they answer and reject or misuse sampling parameters,
+    // so they get none and a large budget.
+    const tuned = /(^|\.)(amazon|meta|mistral)\./.test(model);
+    const frontier = !tuned;
     const systemBlocks: SystemContentBlock[] = [{ text: system }];
     if (opts.promptCache) systemBlocks.push({ cachePoint: { type: "default" } });
     const toolConfig = { tools: toBedrockTools(tools) };
@@ -187,10 +197,10 @@ export function bedrockProvider(opts: BedrockOptions = {}): Provider {
         messages,
         toolConfig,
         inferenceConfig: {
-          maxTokens: opts.maxTokens ?? (isClaude ? 16000 : 5000),
+          maxTokens: opts.maxTokens ?? (frontier ? 16000 : 5000),
           // Nova is most reliable at tool calling near-greedy. Current Claude models
           // reject sampling parameters outright, so none are sent for them.
-          ...(isClaude ? {} : { temperature: opts.temperature ?? 0 }),
+          ...(frontier ? {} : { temperature: opts.temperature ?? 0 }),
         },
       };
       let res: ConverseCommandOutput;
@@ -218,7 +228,10 @@ export function bedrockProvider(opts: BedrockOptions = {}): Provider {
 
       const message = res.output?.message;
       if (!message?.content) throw Object.assign(new AgentError("Bedrock returned no message."), { usage: { ...usage } });
-      messages.push(message);
+      // Reasoning models (Kimi, OpenAI's) return their thinking as a reasoningContent
+      // block. Sent back unsigned on the next round, Bedrock can refuse it, so only
+      // signed reasoning (a model that asks for it back) is kept in the history.
+      messages.push({ ...message, content: message.content.filter((b) => !("reasoningContent" in b && b.reasoningContent) || Boolean(b.reasoningContent.reasoningText?.signature || b.reasoningContent.redactedContent)) });
       const text = message.content
         .map((b) => ("text" in b && typeof b.text === "string" ? b.text : ""))
         .join(" ")

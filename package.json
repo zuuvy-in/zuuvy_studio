@@ -26,7 +26,8 @@
     "build": "npm run build -w @zsite/studio -w @zsite/renderer",
     "admin:create": "tsx scripts/create-superadmin.ts",
     "db:seed:shop": "tsx scripts/seed-shop-demo.ts",
-    "db:seed:showcase": "tsx scripts/seed-showcase.ts"
+    "db:seed:showcase": "tsx scripts/seed-showcase.ts",
+    "ai:check": "tsx scripts/check-model.ts"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",
