@@ -133,6 +133,17 @@ describe("Claude through Bedrock", () => {
     await editSite({ tree: tree(), prompt: "Teal", context, runner: bedrockProvider({ client: nova.client }) });
     expect(nova.requests[0]!.inferenceConfig).toMatchObject({ temperature: 0 });
   });
+
+  it("treats OpenAI, xAI and Kimi models like Claude: no sampling parameters, a large budget", async () => {
+    for (const model of ["global.openai.gpt-5.5", "in.openai.gpt-5.6-terra", "global.xai.grok-4.7", "global.moonshotai.kimi-k3"]) {
+      const b = fakeBedrock([toolUse("t1", "set_theme", { colors: { primary: "#0f766e" } }), done("Teal.")]);
+      await editSite({ tree: tree(), prompt: "Teal", context, model, fallbackModel: "", runner: bedrockProvider({ client: b.client }) });
+      expect(b.requests[0]!.inferenceConfig, model).toEqual({ maxTokens: 16000 });
+    }
+    const lite = fakeBedrock([toolUse("t1", "set_theme", { colors: { primary: "#0f766e" } }), done("Teal.")]);
+    await editSite({ tree: tree(), prompt: "Teal", context, model: "global.amazon.nova-2-lite-v1:0", runner: bedrockProvider({ client: lite.client }) });
+    expect(lite.requests[0]!.inferenceConfig).toMatchObject({ temperature: 0, maxTokens: 5000 });
+  });
 });
 
 describe("Claude not yet enabled on the account", () => {

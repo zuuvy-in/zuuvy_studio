@@ -176,7 +176,12 @@ export function bedrockProvider(opts: BedrockOptions = {}): Provider {
   const client = opts.client ?? new BedrockRuntimeClient({ region });
 
   return async ({ system, user, tools, model, maxIterations, attachments = [] }) => {
-    const isClaude = /anthropic\.claude/.test(model);
+    // Nova (and the older open models) are tuned here: near-greedy sampling and a
+    // modest output budget. Current frontier models — Claude, OpenAI's, xAI's,
+    // Kimi — reason before they answer and reject or misuse sampling parameters,
+    // so they get none and a large budget.
+    const tuned = /(^|\.)(amazon|meta|mistral)\./.test(model);
+    const frontier = !tuned;
     const systemBlocks: SystemContentBlock[] = [{ text: system }];
     if (opts.promptCache) systemBlocks.push({ cachePoint: { type: "default" } });
     const toolConfig = { tools: toBedrockTools(tools) };
@@ -192,10 +197,10 @@ export function bedrockProvider(opts: BedrockOptions = {}): Provider {
         messages,
         toolConfig,
         inferenceConfig: {
-          maxTokens: opts.maxTokens ?? (isClaude ? 16000 : 5000),
+          maxTokens: opts.maxTokens ?? (frontier ? 16000 : 5000),
           // Nova is most reliable at tool calling near-greedy. Current Claude models
           // reject sampling parameters outright, so none are sent for them.
-          ...(isClaude ? {} : { temperature: opts.temperature ?? 0 }),
+          ...(frontier ? {} : { temperature: opts.temperature ?? 0 }),
         },
       };
       let res: ConverseCommandOutput;
