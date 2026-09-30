@@ -228,7 +228,10 @@ export function bedrockProvider(opts: BedrockOptions = {}): Provider {
 
       const message = res.output?.message;
       if (!message?.content) throw Object.assign(new AgentError("Bedrock returned no message."), { usage: { ...usage } });
-      messages.push(message);
+      // Reasoning models (Kimi, OpenAI's) return their thinking as a reasoningContent
+      // block. Sent back unsigned on the next round, Bedrock can refuse it, so only
+      // signed reasoning (a model that asks for it back) is kept in the history.
+      messages.push({ ...message, content: message.content.filter((b) => !("reasoningContent" in b && b.reasoningContent) || Boolean(b.reasoningContent.reasoningText?.signature || b.reasoningContent.redactedContent)) });
       const text = message.content
         .map((b) => ("text" in b && typeof b.text === "string" ? b.text : ""))
         .join(" ")

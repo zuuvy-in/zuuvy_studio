@@ -134,6 +134,22 @@ describe("Claude through Bedrock", () => {
     expect(nova.requests[0]!.inferenceConfig).toMatchObject({ temperature: 0 });
   });
 
+  it("keeps a reasoning model's unsigned thinking out of the history it sends back", async () => {
+    const thinking = { reasoningContent: { reasoningText: { text: "The user wants teal; call set_theme." } } };
+    const b = fakeBedrock([
+      {
+        stopReason: "tool_use",
+        output: { message: { role: "assistant", content: [thinking, { toolUse: { toolUseId: "t1", name: "set_theme", input: { colors: { primary: "#0f766e" } } } }] } },
+      } as never,
+      done("Teal."),
+    ]);
+    const r = await editSite({ tree: tree(), prompt: "Teal", context, model: "global.moonshotai.kimi-k3", fallbackModel: "", runner: bedrockProvider({ client: b.client }) });
+    expect(r.operations).toHaveLength(1);
+    const sentBack = b.requests[1]!.messages!.find((m) => m.role === "assistant")!;
+    expect(sentBack.content!.some((c) => "reasoningContent" in c)).toBe(false);
+    expect(sentBack.content!.some((c) => "toolUse" in c)).toBe(true);
+  });
+
   it("treats OpenAI, xAI and Kimi models like Claude: no sampling parameters, a large budget", async () => {
     for (const model of ["global.openai.gpt-5.5", "in.openai.gpt-5.6-terra", "global.xai.grok-4.7", "global.moonshotai.kimi-k3"]) {
       const b = fakeBedrock([toolUse("t1", "set_theme", { colors: { primary: "#0f766e" } }), done("Teal.")]);
