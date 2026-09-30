@@ -90,7 +90,7 @@ function explainOnly(e: unknown, model: string, region: string): never {
     case "AccessDeniedException":
       if (/marketplace/i.test(err.message)) {
         throw new AgentError(
-          `${model} has not been enabled on this AWS account yet. Open it once in the Bedrock playground (${region}) as an administrator — that accepts its AWS Marketplace terms for the whole account — then try again.`,
+          `${model} is sold through AWS Marketplace and this AWS account has not subscribed to it yet. Either run it once in the Bedrock playground (${region}) as an administrator — that subscribes the whole account — or give the caller aws-marketplace:ViewSubscriptions and aws-marketplace:Subscribe (the deployed services have them) so its first call subscribes. Allow a few minutes after either, then try again.`,
         );
       }
       if (/use case|use-case|form/i.test(err.message)) {

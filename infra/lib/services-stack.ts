@@ -149,6 +149,14 @@ export class ServicesStack extends Stack {
         `arn:aws:bedrock:*:${this.account}:inference-profile/*`,
       ],
     });
+    // Third-party models (Anthropic's among them) are sold through AWS Marketplace:
+    // the first call to one subscribes the account, and that call is refused
+    // ("AccessDeniedException … aws-marketplace:ViewSubscriptions, aws-marketplace:Subscribe")
+    // unless the caller may do it. Amazon's own models (Nova) never need this.
+    const bedrockMarketplace = new iam.PolicyStatement({
+      actions: ["aws-marketplace:ViewSubscriptions", "aws-marketplace:Subscribe"],
+      resources: ["*"],
+    });
     // Read-only: lets the image path find a model the account can call when the configured id is refused.
     const bedrockList = new iam.PolicyStatement({
       actions: ["bedrock:ListInferenceProfiles", "bedrock:ListFoundationModels", "bedrock:GetInferenceProfile"],
@@ -184,6 +192,7 @@ export class ServicesStack extends Stack {
       if (opts.bedrock) {
         task.addToTaskRolePolicy(bedrock);
         task.addToTaskRolePolicy(bedrockList);
+        task.addToTaskRolePolicy(bedrockMarketplace);
       }
       for (const p of opts.policies ?? []) task.addToTaskRolePolicy(p);
       task.addContainer(name, {

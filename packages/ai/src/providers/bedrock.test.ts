@@ -143,6 +143,7 @@ describe("Claude not yet enabled on the account", () => {
       },
     };
     const err = await editSite({ tree: tree(), prompt: "x", context, model: "global.anthropic.claude-sonnet-5", runner: bedrockProvider({ client, region: "ap-south-1" }) }).catch((e) => e);
-    expect(err.message).toMatch(/not been enabled on this AWS account yet/);
+    expect(err.message).toMatch(/has not subscribed to it yet/);
+    expect(err.message).toMatch(/aws-marketplace:Subscribe/);
   });
 });
