@@ -39,7 +39,7 @@ export type EditState = {
   tableDeletes: { key: string; reason: string }[];
 };
 
-export type TableColumnSpec = { key: string; label: string; type: "text" | "email" | "tel" | "number" | "textarea" | "select" | "checkbox" | "date" };
+export type TableColumnSpec = { key: string; label: string; type: "text" | "email" | "tel" | "number" | "textarea" | "select" | "pills" | "checkbox" | "date" };
 export type TableOpSpec =
   | { op: "create"; key: string; name: string; columns: TableColumnSpec[]; notify?: boolean }
   | { op: "update"; key: string; name?: string; columns?: TableColumnSpec[]; notify?: boolean };
@@ -375,11 +375,24 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
     }),
     siteTool({
       name: "set_navigation",
-      description: "Set the header: brand name, links (max 8), and an optional button (null removes it).",
+      description:
+        "Set the header: brand name, links (max 8), an optional button (null removes it), and how the links open on phones (mobile). On screens under 768px the links always fold into a menu button; choose its look to fit the brand — drawer from the side (default, suits most), dropdown under the header (few links), fullscreen with big links (bold, editorial, fashion, creative), sheet from the bottom (thumb-friendly, stores and apps) — plus the icon, an optional word beside it, the open menu's colour, whether the button goes inside, and a short note at its foot (hours, phone). Send only what changes.",
       inputSchema: z.object({
         brand: z.string().optional(),
         links: z.array(LinkInput).optional(),
         cta: LinkInput.nullable().optional(),
+        mobile: z
+          .object({
+            style: z.enum(["drawer", "dropdown", "fullscreen", "sheet"]),
+            side: z.enum(["left", "right"]),
+            icon: z.enum(["menu", "grid", "dots"]),
+            label: z.string().max(20),
+            background: z.enum(["page", "surface", "primary", "dark"]),
+            showCta: z.boolean(),
+            note: z.string().max(120),
+          })
+          .partial()
+          .optional(),
       }),
       run: (i) => apply({ op: "setNav", ...i }),
     }),
@@ -395,7 +408,7 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
     const column = z.object({
       key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/).describe("lowercase_with_underscores; a form field's name"),
       label: z.string().max(80),
-      type: z.enum(["text", "email", "tel", "number", "textarea", "select", "checkbox", "date"]).default("text"),
+      type: z.enum(["text", "email", "tel", "number", "textarea", "select", "pills", "checkbox", "date"]).default("text"),
     });
     const key = z.string().regex(/^[a-z][a-z0-9_]{0,39}$/);
     tools.push(

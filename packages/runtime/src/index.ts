@@ -4,3 +4,4 @@ export { linkRewriter } from "./context";
 export type { ProductView, RenderContext, ShopContext } from "./context";
 export { themeStyle, inkFor, contrast, fontsHref } from "./theme";
 export { AuthLayout, SystemFrame, greet } from "./system";
+export { mobileMenuOf } from "./SiteRenderer";

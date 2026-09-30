@@ -240,6 +240,18 @@ describe("forms, tables and plain text", () => {
     expect(state.operations).toHaveLength(2);
   });
 
+  it("takes a single choice as pills, with an option chosen already", async () => {
+    const { tools, state } = createSiteTools(tree());
+    const pills = { name: "kind", label: "Type", type: "pills", options: ["Website", "Store", "Portfolio"], value: "Website" };
+    await tool(tools, "add_section").run({
+      page: "/",
+      type: "form",
+      props: { heading: "Describe it", fields: [{ name: "prompt", label: "Describe your website", type: "textarea", required: true }, pills], destination: { kind: "url", url: "https://studio.zuuvy.site/signup" } },
+    });
+    const form = state.tree.pages[0]!.sections.find((s) => s.type === "form")!;
+    expect((form.props as { fields: unknown[] }).fields[1]).toMatchObject({ type: "pills", value: "Website", options: ["Website", "Store", "Portfolio"] });
+  });
+
   it("offers save_image only with a way to store it, and passes through what it is given", async () => {
     expect(createSiteTools(tree()).tools.map((t) => t.name)).not.toContain("save_image");
     const seen: unknown[] = [];
@@ -278,5 +290,16 @@ describe("cart, account and their pages", () => {
     await tool(tools, "set_commerce").run({ account: { label: "Members", display: "button" }, pages: { auth: { layout: "image", image: "https://images.unsplash.com/x" } } });
     expect(state.tree.commerce!.account).toMatchObject({ label: "Members", display: "button" });
     expect(createSiteTools(tree()).tools.map((t) => t.name)).not.toContain("set_commerce");
+  });
+});
+
+describe("phone menu", () => {
+  it("lets the builder choose how the header opens on phones, keeping what it does not mention", async () => {
+    const { tools, state } = createSiteTools(tree());
+    await tool(tools, "set_navigation").run({ mobile: { style: "fullscreen", background: "dark", note: "Open 9–9, every day" } });
+    expect(state.tree.nav.mobile).toMatchObject({ style: "fullscreen", background: "dark", note: "Open 9–9, every day", side: "right", icon: "menu", showCta: true });
+    await tool(tools, "set_navigation").run({ mobile: { icon: "grid" } });
+    expect(state.tree.nav.mobile).toMatchObject({ style: "fullscreen", icon: "grid", note: "Open 9–9, every day" });
+    await expect(async () => tool(tools, "set_navigation").run({ mobile: { style: "hamburger" } })).rejects.toThrow();
   });
 });

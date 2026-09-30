@@ -106,3 +106,7 @@ npm run db:seed:showcase  # republish the ten premade sites on the admin's accou
   trees predate newer settings.
 - **Premade sites cross tenants only through the showcase functions** in
   migration 0008; never widen a grant for them.
+- **Every header folds into a phone menu under 768px** (`nav.mobile`: drawer,
+  dropdown, fullscreen or sheet — the AI picks it with `set_navigation`). It
+  opens with a checkbox and CSS; a one-line inline script only closes it after
+  a link tap or Escape. Read it through `mobileMenuOf` — older trees have none.

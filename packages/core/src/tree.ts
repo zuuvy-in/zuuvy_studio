@@ -366,9 +366,13 @@ export const BLOCKS = {
         z.object({
           name: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/).describe("Key the answer is stored under; for a table destination, one of the table's column keys"),
           label: Text(80),
-          type: z.enum(["text", "email", "tel", "number", "textarea", "select", "checkbox", "date"]).default("text"),
+          type: z
+            .enum(["text", "email", "tel", "number", "textarea", "select", "pills", "checkbox", "date"])
+            .default("text")
+            .describe("select: a dropdown; pills: the options as a row of tappable pills, one chosen (best for 2–6 short choices)"),
           required: z.boolean().default(false),
-          options: z.array(Text(60)).max(30).optional().describe("For select"),
+          options: z.array(Text(60)).max(30).optional().describe("For select and pills"),
+          value: Text(200).optional().describe("Filled in or chosen already when the page opens (for pills and select, one of the options)"),
           placeholder: Text(80).optional(),
           width: z.enum(["full", "half"]).default("full").describe("half puts two short fields side by side"),
         }),
@@ -451,6 +455,25 @@ export const Section = z.discriminatedUnion("type", [
 ]);
 export type Section = z.infer<typeof Section>;
 
+/**
+ * How the header's links open on a phone. Every site collapses its links into
+ * a menu button on small screens; this decides how that menu looks.
+ */
+export const MobileMenu = z.object({
+  style: z
+    .enum(["drawer", "dropdown", "fullscreen", "sheet"])
+    .default("drawer")
+    .describe("drawer: a panel slides in from the side; dropdown: a panel drops under the header; fullscreen: big links over the whole screen (bold, editorial brands); sheet: rises from the bottom, easy to reach with a thumb"),
+  side: z.enum(["left", "right"]).default("right").describe("Which side a drawer comes from"),
+  icon: z.enum(["menu", "grid", "dots"]).default("menu").describe("The button: menu (three lines), grid (four squares), dots"),
+  label: Text(20).optional().describe('A word beside the icon, e.g. "Menu"; omit for the icon alone'),
+  background: z.enum(["page", "surface", "primary", "dark"]).default("page").describe("The open menu's colour"),
+  showCta: z.boolean().default(true).describe("Show the header's button inside the menu"),
+  note: Text(120).optional().describe("A line at the foot of the open menu: opening hours, a phone number, a promise"),
+});
+export type MobileMenu = z.infer<typeof MobileMenu>;
+export const DEFAULT_MOBILE_MENU: MobileMenu = MobileMenu.parse({});
+
 export const PagePath = z
   .string()
   .max(80)
@@ -478,6 +501,8 @@ export const SiteTree = z
       logo: ImageUrl.optional(),
       links: z.array(Link).max(8),
       cta: Link.optional(),
+      /** How the links open on a phone. Absent reads as the default drawer. */
+      mobile: MobileMenu.optional(),
     }),
     footer: z.object({
       text: Text(300),

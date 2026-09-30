@@ -193,6 +193,246 @@
   }
 }
 
+/* ---------------------------------------------------------------------------
+   Phone menu. Below 768px the header's links fold into a button; the open menu
+   takes the look the design chose (nav.mobile). A checkbox holds the state.
+   --------------------------------------------------------------------------- */
+.zs-mnav-state {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 1px;
+  height: 1px;
+}
+.zs-mnav-toggle,
+.zs-mnav {
+  display: none;
+}
+@media (max-width: 768px) {
+  .zs-nav-links,
+  .zs-nav .zs-nav-cta {
+    display: none;
+  }
+  /* Beats the desktop spacing rule (.zs-nav-links + .zs-nav-actions): with the links folded away, everything else goes right. */
+  .zs-nav-inner .zs-nav-links + .zs-nav-actions,
+  .zs-nav-inner .zs-nav-actions {
+    margin-left: auto;
+  }
+  .zs-mnav-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    padding: 8px;
+    margin-right: -8px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--zs-text);
+  }
+  .zs-nav-actions + .zs-mnav-toggle {
+    margin-left: 4px;
+  }
+  .zs-mnav-toggle:hover {
+    background: color-mix(in srgb, var(--zs-text) 6%, transparent);
+  }
+  .zs-mnav-state:focus-visible ~ .zs-nav .zs-mnav-toggle {
+    outline: 2px solid var(--zs-primary);
+  }
+
+  .zs-mnav {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    visibility: hidden;
+    pointer-events: none;
+    --mnav-bg: var(--zs-bg);
+    --mnav-ink: var(--zs-text);
+    --mnav-line: color-mix(in srgb, var(--mnav-ink) 10%, transparent);
+  }
+  .zs-mnav[data-bg="surface"] {
+    --mnav-bg: var(--zs-surface);
+  }
+  .zs-mnav[data-bg="primary"] {
+    --mnav-bg: var(--zs-primary);
+    --mnav-ink: var(--zs-primary-ink);
+  }
+  .zs-mnav[data-bg="dark"] {
+    --mnav-bg: color-mix(in srgb, var(--zs-text) 94%, #000);
+    --mnav-ink: #f8f8f8;
+  }
+  .zs-mnav-state:checked ~ .zs-mnav {
+    visibility: visible;
+    pointer-events: auto;
+  }
+  html:has(#zs-mnav-open:checked) {
+    overflow: hidden;
+  }
+  .zs-mnav-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgb(0 0 0 / 0.38);
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
+  .zs-mnav-state:checked ~ .zs-mnav .zs-mnav-backdrop {
+    opacity: 1;
+  }
+  .zs-mnav-panel {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 18px 22px 26px;
+    background: var(--mnav-bg);
+    color: var(--mnav-ink);
+    overflow-y: auto;
+    transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.25s ease;
+    box-shadow: 0 20px 60px -20px rgb(0 0 0 / 0.45);
+  }
+  .zs-mnav-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 32px;
+  }
+  .zs-mnav-head .zs-brand {
+    color: inherit;
+  }
+  .zs-mnav-close {
+    font-size: 1.9rem;
+    line-height: 1;
+    padding: 2px 8px;
+    margin-right: -8px;
+    cursor: pointer;
+    border-radius: 8px;
+  }
+  .zs-mnav-links {
+    display: flex;
+    flex-direction: column;
+  }
+  .zs-mnav-links a {
+    color: inherit;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 1.15rem;
+    padding: 14px 2px;
+    border-bottom: 1px solid var(--mnav-line);
+  }
+  .zs-mnav-cta {
+    align-self: stretch;
+    text-align: center;
+  }
+  .zs-mnav[data-bg="primary"] .zs-mnav-cta {
+    background: var(--zs-primary-ink);
+    color: var(--zs-primary);
+  }
+  .zs-mnav-note {
+    margin: 0;
+    font-size: 0.9rem;
+    opacity: 0.75;
+  }
+
+  /* drawer: from the side */
+  .zs-mnav[data-style="drawer"] .zs-mnav-panel {
+    top: 0;
+    bottom: 0;
+    width: min(86vw, 360px);
+    right: 0;
+    transform: translateX(105%);
+  }
+  .zs-mnav[data-style="drawer"][data-side="left"] .zs-mnav-panel {
+    right: auto;
+    left: 0;
+    transform: translateX(-105%);
+  }
+  .zs-mnav-state:checked ~ .zs-mnav[data-style="drawer"] .zs-mnav-panel {
+    transform: none;
+  }
+
+  /* dropdown: under the header */
+  .zs-mnav[data-style="dropdown"] .zs-mnav-panel {
+    top: 0;
+    left: 0;
+    right: 0;
+    max-height: 88vh;
+    border-radius: 0 0 var(--zs-radius-card) var(--zs-radius-card);
+    transform: translateY(-16px);
+    opacity: 0;
+  }
+  .zs-mnav-state:checked ~ .zs-mnav[data-style="dropdown"] .zs-mnav-panel {
+    transform: none;
+    opacity: 1;
+  }
+
+  /* fullscreen: big links over everything */
+  .zs-mnav[data-style="fullscreen"] .zs-mnav-panel {
+    inset: 0;
+    opacity: 0;
+    transform: scale(1.02);
+    box-shadow: none;
+  }
+  .zs-mnav[data-style="fullscreen"] .zs-mnav-links {
+    margin-top: 6vh;
+  }
+  .zs-mnav[data-style="fullscreen"] .zs-mnav-links a {
+    font-family: var(--zs-font-heading);
+    font-size: clamp(1.9rem, 9vw, 2.8rem);
+    letter-spacing: -0.02em;
+    border-bottom: 0;
+    padding: 8px 0;
+  }
+  .zs-mnav-state:checked ~ .zs-mnav[data-style="fullscreen"] .zs-mnav-panel {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* sheet: up from the bottom, within thumb reach */
+  .zs-mnav[data-style="sheet"] .zs-mnav-panel {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 85vh;
+    border-radius: 22px 22px 0 0;
+    transform: translateY(105%);
+    padding-bottom: max(26px, env(safe-area-inset-bottom));
+  }
+  .zs-mnav[data-style="sheet"] .zs-mnav-panel::before {
+    content: "";
+    align-self: center;
+    width: 42px;
+    height: 5px;
+    border-radius: 99px;
+    background: var(--mnav-line);
+    margin: -6px 0 -4px;
+  }
+  .zs-mnav-state:checked ~ .zs-mnav[data-style="sheet"] .zs-mnav-panel {
+    transform: none;
+  }
+
+  /* Links arrive one after another as the menu opens. */
+  .zs-mnav-state:checked ~ .zs-mnav .zs-mnav-links a {
+    animation: zs-mnav-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation-delay: calc(60ms + var(--i, 0) * 40ms);
+  }
+}
+@keyframes zs-mnav-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zs-mnav-panel,
+  .zs-mnav-backdrop {
+    transition: none !important;
+  }
+  .zs-mnav-links a {
+    animation: none !important;
+  }
+}
+
 /* Sections */
 .zs-section {
   padding: clamp(56px, 8vw, 96px) 0;
@@ -2170,6 +2410,55 @@ img.zs-icon {
 .zs-optional {
   font-weight: 400;
   opacity: 0.6;
+}
+/* A single choice as a row of pills: real radio buttons, visually replaced. */
+.zs-pills {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.zs-pills legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.zs-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.zs-pill {
+  position: relative;
+  cursor: pointer;
+}
+.zs-pill input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.zs-pill span {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  font-weight: 500;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+.zs-pill:hover span {
+  border-color: var(--zs-primary);
+}
+.zs-pill input:checked + span {
+  background: var(--zs-primary);
+  border-color: var(--zs-primary);
+  color: var(--zs-primary-ink);
+}
+.zs-pill input:focus-visible + span {
+  outline: 2px solid var(--zs-primary);
+  outline-offset: 2px;
 }
 .zs-site-form .zs-btn {
   justify-self: start;
