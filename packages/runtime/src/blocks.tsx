@@ -736,6 +736,25 @@ function Field({ f }: { f: BlockProps<"form">["fields"][number] }) {
       </label>
     );
   }
+  if (f.type === "pills") {
+    // Radio buttons drawn as pills: one choice, sent like any field (and as a URL parameter).
+    return (
+      <fieldset className="zs-pills" data-width={f.width}>
+        <legend>
+          {f.label}
+          {!f.required && <span className="zs-optional"> (optional)</span>}
+        </legend>
+        <div className="zs-pill-row" role="radiogroup">
+          {(f.options ?? []).map((o, i) => (
+            <label key={o} className="zs-pill">
+              <input type="radio" name={f.name} value={o} defaultChecked={f.value === o} required={f.required && i === 0} />
+              <span>{o}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+    );
+  }
   return (
     <label data-width={f.width}>
       <span>
@@ -743,9 +762,9 @@ function Field({ f }: { f: BlockProps<"form">["fields"][number] }) {
         {!f.required && <span className="zs-optional"> (optional)</span>}
       </span>
       {f.type === "textarea" ? (
-        <textarea rows={4} {...common} />
+        <textarea rows={4} {...common} defaultValue={f.value} />
       ) : f.type === "select" ? (
-        <select name={f.name} required={f.required} defaultValue="">
+        <select name={f.name} required={f.required} defaultValue={f.value && (f.options ?? []).includes(f.value) ? f.value : ""}>
           <option value="" disabled>
             {f.placeholder ?? "Choose…"}
           </option>
@@ -754,7 +773,7 @@ function Field({ f }: { f: BlockProps<"form">["fields"][number] }) {
           ))}
         </select>
       ) : (
-        <input type={f.type} {...common} autoComplete={f.type === "email" ? "email" : f.type === "tel" ? "tel" : f.name === "name" ? "name" : undefined} />
+        <input type={f.type} {...common} defaultValue={f.value} autoComplete={f.type === "email" ? "email" : f.type === "tel" ? "tel" : f.name === "name" ? "name" : undefined} />
       )}
     </label>
   );

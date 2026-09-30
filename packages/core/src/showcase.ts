@@ -17,7 +17,7 @@ export type PhotoLookup = (slot: string) => string | undefined;
 export type ShowcaseProduct = { name: string; category: string; price: number; mrp?: number; description: string; photo: string };
 
 /** A form's table, created with the site so the form works from the first visit. */
-export type ShowcaseTable = { key: string; name: string; columns: { key: string; label: string; type: "text" | "email" | "tel" | "number" | "textarea" | "select" | "checkbox" | "date" }[] };
+export type ShowcaseTable = { key: string; name: string; columns: { key: string; label: string; type: "text" | "email" | "tel" | "number" | "textarea" | "select" | "pills" | "checkbox" | "date" }[] };
 
 export type ShowcaseDesign = {
   slug: string;

@@ -240,6 +240,18 @@ describe("forms, tables and plain text", () => {
     expect(state.operations).toHaveLength(2);
   });
 
+  it("takes a single choice as pills, with an option chosen already", async () => {
+    const { tools, state } = createSiteTools(tree());
+    const pills = { name: "kind", label: "Type", type: "pills", options: ["Website", "Store", "Portfolio"], value: "Website" };
+    await tool(tools, "add_section").run({
+      page: "/",
+      type: "form",
+      props: { heading: "Describe it", fields: [{ name: "prompt", label: "Describe your website", type: "textarea", required: true }, pills], destination: { kind: "url", url: "https://studio.zuuvy.site/signup" } },
+    });
+    const form = state.tree.pages[0]!.sections.find((s) => s.type === "form")!;
+    expect((form.props as { fields: unknown[] }).fields[1]).toMatchObject({ type: "pills", value: "Website", options: ["Website", "Store", "Portfolio"] });
+  });
+
   it("offers save_image only with a way to store it, and passes through what it is given", async () => {
     expect(createSiteTools(tree()).tools.map((t) => t.name)).not.toContain("save_image");
     const seen: unknown[] = [];

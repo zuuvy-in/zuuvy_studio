@@ -16,7 +16,7 @@ import { type Tx, UserError, isUuid, withTenant } from "./db";
 import { getAlerts, queueEmail } from "./email";
 import { type ResolvedSite, loadPublished } from "./storefront";
 
-export type ColumnType = "text" | "email" | "tel" | "number" | "textarea" | "select" | "checkbox" | "date";
+export type ColumnType = "text" | "email" | "tel" | "number" | "textarea" | "select" | "pills" | "checkbox" | "date";
 export type TableColumn = { key: string; label: string; type: ColumnType };
 export type SiteTable = {
   id: string;
@@ -38,7 +38,7 @@ export type TableOp =
 
 const COLUMNS = "id, site_id, key, name, columns, notify, created_at, updated_at";
 const KEY = /^[a-z][a-z0-9_]{0,39}$/;
-const TYPES: ColumnType[] = ["text", "email", "tel", "number", "textarea", "select", "checkbox", "date"];
+const TYPES: ColumnType[] = ["text", "email", "tel", "number", "textarea", "select", "pills", "checkbox", "date"];
 
 export function cleanColumns(columns: TableColumn[]): TableColumn[] {
   if (!columns.length) throw new UserError("A table needs at least one column.");
@@ -160,7 +160,7 @@ export async function queryRows(tx: Tx, table: SiteTable, query: RowQuery = {}):
     if (col.type === "checkbox") {
       params.push(/^(yes|true|1|on)$/i.test(value));
       where.push(`coalesce((data->>$${k})::boolean, false) = $${params.length}`);
-    } else if (col.type === "select") {
+    } else if (col.type === "select" || col.type === "pills") {
       params.push(value);
       where.push(`data->>$${k} = $${params.length}`);
     } else {
@@ -398,6 +398,7 @@ function readField(
       if (Number.isNaN(Date.parse(v))) throw new UserError(`“${field.label}” needs a date.`);
       return v.slice(0, 10);
     case "select":
+    case "pills":
       if (!opts.anyOption && !(field.options ?? []).includes(v)) throw new UserError(`Choose one of the options for “${field.label}”.`);
       return v;
     default:

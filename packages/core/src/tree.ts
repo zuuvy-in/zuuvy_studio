@@ -366,9 +366,13 @@ export const BLOCKS = {
         z.object({
           name: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/).describe("Key the answer is stored under; for a table destination, one of the table's column keys"),
           label: Text(80),
-          type: z.enum(["text", "email", "tel", "number", "textarea", "select", "checkbox", "date"]).default("text"),
+          type: z
+            .enum(["text", "email", "tel", "number", "textarea", "select", "pills", "checkbox", "date"])
+            .default("text")
+            .describe("select: a dropdown; pills: the options as a row of tappable pills, one chosen (best for 2–6 short choices)"),
           required: z.boolean().default(false),
-          options: z.array(Text(60)).max(30).optional().describe("For select"),
+          options: z.array(Text(60)).max(30).optional().describe("For select and pills"),
+          value: Text(200).optional().describe("Filled in or chosen already when the page opens (for pills and select, one of the options)"),
           placeholder: Text(80).optional(),
           width: z.enum(["full", "half"]).default("full").describe("half puts two short fields side by side"),
         }),

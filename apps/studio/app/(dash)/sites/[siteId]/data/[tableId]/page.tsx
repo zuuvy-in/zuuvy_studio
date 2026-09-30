@@ -29,7 +29,7 @@ export default async function TablePage({ params, searchParams }: { params: Prom
     const result = await queryRows(tx, table, rowQuery(table, search));
     // Choices for select columns: whatever values the table holds.
     const options: Record<string, string[]> = {};
-    for (const c of table.columns.filter((c) => c.type === "select")) {
+    for (const c of table.columns.filter((c) => c.type === "select" || c.type === "pills")) {
       const rows = await tx.query<{ v: string }>(
         "select distinct data->>$2 as v from site_table_rows where table_id = $1 and data->>$2 is not null order by 1 limit 50",
         [table.id, c.key],
@@ -85,7 +85,7 @@ export default async function TablePage({ params, searchParams }: { params: Prom
           {table.columns.map((c) => (
             <div key={c.key}>
               <label className="label" htmlFor={`f_${c.key}`}>{c.label}</label>
-              {c.type === "select" || c.type === "checkbox" ? (
+              {c.type === "select" || c.type === "pills" || c.type === "checkbox" ? (
                 <select id={`f_${c.key}`} name={`f_${c.key}`} defaultValue={query.filters?.[c.key] ?? ""} className="field">
                   <option value="">Any</option>
                   {(c.type === "checkbox" ? ["Yes", "No"] : options[c.key] ?? []).map((o) => <option key={o} value={o}>{o}</option>)}

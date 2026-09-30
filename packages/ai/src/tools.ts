@@ -39,7 +39,7 @@ export type EditState = {
   tableDeletes: { key: string; reason: string }[];
 };
 
-export type TableColumnSpec = { key: string; label: string; type: "text" | "email" | "tel" | "number" | "textarea" | "select" | "checkbox" | "date" };
+export type TableColumnSpec = { key: string; label: string; type: "text" | "email" | "tel" | "number" | "textarea" | "select" | "pills" | "checkbox" | "date" };
 export type TableOpSpec =
   | { op: "create"; key: string; name: string; columns: TableColumnSpec[]; notify?: boolean }
   | { op: "update"; key: string; name?: string; columns?: TableColumnSpec[]; notify?: boolean };
@@ -395,7 +395,7 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
     const column = z.object({
       key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/).describe("lowercase_with_underscores; a form field's name"),
       label: z.string().max(80),
-      type: z.enum(["text", "email", "tel", "number", "textarea", "select", "checkbox", "date"]).default("text"),
+      type: z.enum(["text", "email", "tel", "number", "textarea", "select", "pills", "checkbox", "date"]).default("text"),
     });
     const key = z.string().regex(/^[a-z][a-z0-9_]{0,39}$/);
     tools.push(

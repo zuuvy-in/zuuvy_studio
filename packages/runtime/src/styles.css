@@ -2171,6 +2171,55 @@ img.zs-icon {
   font-weight: 400;
   opacity: 0.6;
 }
+/* A single choice as a row of pills: real radio buttons, visually replaced. */
+.zs-pills {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.zs-pills legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.zs-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.zs-pill {
+  position: relative;
+  cursor: pointer;
+}
+.zs-pill input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.zs-pill span {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  font-weight: 500;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+.zs-pill:hover span {
+  border-color: var(--zs-primary);
+}
+.zs-pill input:checked + span {
+  background: var(--zs-primary);
+  border-color: var(--zs-primary);
+  color: var(--zs-primary-ink);
+}
+.zs-pill input:focus-visible + span {
+  outline: 2px solid var(--zs-primary);
+  outline-offset: 2px;
+}
 .zs-site-form .zs-btn {
   justify-self: start;
 }
