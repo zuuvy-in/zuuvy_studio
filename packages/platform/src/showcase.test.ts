@@ -57,8 +57,32 @@ describe("premade sites", () => {
     expect(list[0]!.url).toContain("tpl-bakery");
   });
 
+  it("on deploy, add only what is missing: an admin's edits and a photo-filled seed are left alone", async () => {
+    const photo = async () => "https://images.unsplash.com/photo-deploy?w=1600&q=80&auto=format&fit=crop";
+    // Nothing new without a photo library: everything seeded exists.
+    const none = await seedShowcases("rishav@zuuvy.test", { mode: "missing", only: ["bakery", "fashion"] });
+    expect(none).toEqual([]);
+    // An admin edits fashion; bakery is still the seed's own, photo-less version.
+    const fashion = (await listShowcases()).find((s) => s.slug === "fashion")!;
+    await withTenant(admin.tenantId, async (tx) => {
+      const { createVersion, publishVersion } = await import("./index");
+      const v = await latestVersion(tx, fashion.site_id);
+      const edited = await createVersion(tx, fashion.site_id, { tree: v.tree!, parentId: v.id, source: "manual", summary: "My tweaks", userId: admin.userId });
+      await publishVersion(tx, fashion.site_id, edited.id, admin.userId);
+    });
+    // With a key, the untouched photo-less seed gets its photos; the edited one is not touched.
+    const filled = await seedShowcases("rishav@zuuvy.test", { mode: "missing", search: photo, only: ["bakery", "fashion"] });
+    expect(filled.map((r) => r.slug)).toEqual(["bakery"]);
+    expect((await listShowcases()).find((s) => s.slug === "bakery")!.cover_url).toContain("photo-deploy");
+    // And once it has photos, later deploys leave it alone too; a brand-new design is added.
+    const later = await seedShowcases("rishav@zuuvy.test", { mode: "missing", search: photo, only: ["bakery", "fashion", "clinic"] });
+    expect(later.map((r) => [r.slug, r.created])).toEqual([["clinic", true]]);
+  });
+
   it("fork into another business: its own copy, its name, the forms' tables, and the sample products if asked", async () => {
-    const [bakery, fashion] = await listShowcases();
+    const all = await listShowcases();
+    const bakery = all.find((s) => s.slug === "bakery");
+    const fashion = all.find((s) => s.slug === "fashion");
     const site = await forkShowcase(shop.tenantId, { showcaseId: bakery!.id, name: "Default", subdomain: "asha-sweets", businessName: "Asha Sweets", userId: shop.userId });
     expect(site).toMatchObject({ kind: "landing", published_number: 1 });
     const tree = (await withTenant(shop.tenantId, (tx) => latestVersion(tx, site.id))).tree!;

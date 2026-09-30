@@ -2,7 +2,8 @@
  * The deploy's database step, run as a one-off ECS task before new services
  * roll out: apply migrations as the owner, then make sure the app role can
  * log in with the password Secrets Manager generated for it, then make sure
- * the platform's superadmin exists (create-superadmin.ts). Idempotent.
+ * the platform's superadmin exists (create-superadmin.ts), then add any premade
+ * site not yet on that admin's account. Idempotent.
  */
 import { join } from "node:path";
 import pg from "pg";
@@ -28,3 +29,23 @@ try {
 
 // The first platform admin. Prints a generated password once, the first time only.
 await import("./create-superadmin");
+
+// The premade sites, on that admin's account: only the ones not there yet, so
+// an admin's edits (or a showcase they stopped offering) survive every deploy.
+// Best-effort — a photo library that is down must not stop a release.
+if (process.env.SHOWCASE_SEED !== "0") {
+  const { closePool, seedShowcases, unsplashSearch } = await import("@zsite/platform");
+  const key = process.env.UNSPLASH_ACCESS_KEY;
+  try {
+    const done = await seedShowcases(process.env.SUPERADMIN_EMAIL || "rishav@zuuvy.in", {
+      mode: "missing",
+      search: key ? unsplashSearch(key) : null,
+      log: (l) => console.log(`showcase: ${l}`),
+    });
+    console.log(done.length ? `showcase: ${done.length} premade site(s) seeded${key ? "" : " (no UNSPLASH_ACCESS_KEY: without photos)"}` : "showcase: premade sites are up to date");
+  } catch (e) {
+    console.log(`showcase: skipped — ${(e as Error).message}`);
+  } finally {
+    await closePool();
+  }
+}

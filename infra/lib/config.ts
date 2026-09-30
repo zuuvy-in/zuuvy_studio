@@ -24,6 +24,8 @@ export type DeployConfig = {
   mcpServers: string;
   imageGeneration: string;
   importHosts: string;
+  /** "0" stops the deploy seeding the premade sites. */
+  showcaseSeed: string;
   zuuvyApiUrl: string;
   /** Aurora PostgreSQL engine version; must be one the region offers. */
   dbEngineVersion: string;
@@ -74,6 +76,8 @@ export function loadConfig(): DeployConfig {
     // Picture generation is off unless "1"; hosts save_image may copy from (default: Icons8).
     imageGeneration: process.env.ZSITE_IMAGE_GENERATION || "",
     importHosts: process.env.ZSITE_IMPORT_HOSTS || "",
+    // The migration task seeds missing premade sites unless this is "0".
+    showcaseSeed: process.env.SHOWCASE_SEED || "",
     zuuvyApiUrl: process.env.ZUUVY_API_URL || "https://api.zuuvy.in",
     // AWS retires old minor versions (16.6 was already gone in ap-south-1), so
     // this is a variable: `aws rds describe-db-engine-versions --engine
