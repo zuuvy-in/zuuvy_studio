@@ -136,6 +136,16 @@ describe("Claude through Bedrock", () => {
 });
 
 describe("Claude not yet enabled on the account", () => {
+  it("says a payment method is missing when Marketplace refuses for that", async () => {
+    const client = {
+      async send(): Promise<ConverseCommandOutput> {
+        throw Object.assign(new Error("Model access is denied due to INVALID_PAYMENT_INSTRUMENT:A valid payment instrument must be provided.. Your AWS Marketplace subscription for this model cannot be completed at this time."), { name: "AccessDeniedException" });
+      },
+    };
+    const err = await editSite({ tree: tree(), prompt: "x", context, model: "global.anthropic.claude-sonnet-5", fallbackModel: "", runner: bedrockProvider({ client, region: "ap-south-1" }) }).catch((e) => e);
+    expect(err.message).toMatch(/valid payment method/);
+  });
+
   it("says to open it once in the playground when AWS names Marketplace", async () => {
     const client = {
       async send(): Promise<ConverseCommandOutput> {

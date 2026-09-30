@@ -88,6 +88,11 @@ function explainOnly(e: unknown, model: string, region: string): never {
     case "CredentialsProviderError":
       throw new AgentError("No AWS credentials found for Bedrock. Set AWS_PROFILE or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (in production, the service's IAM role).");
     case "AccessDeniedException":
+      if (/INVALID_PAYMENT_INSTRUMENT|payment instrument/i.test(err.message)) {
+        throw new AgentError(
+          `${model} is sold through AWS Marketplace, and AWS will not subscribe this account until it has a valid payment method (credits alone do not count). Add a card under Billing → Payment preferences in the AWS console, wait a few minutes and try again — or use an Amazon model (Nova), which needs no subscription.`,
+        );
+      }
       if (/marketplace/i.test(err.message)) {
         throw new AgentError(
           `${model} is sold through AWS Marketplace and this AWS account has not subscribed to it yet. Either run it once in the Bedrock playground (${region}) as an administrator — that subscribes the whole account — or give the caller aws-marketplace:ViewSubscriptions and aws-marketplace:Subscribe (the deployed services have them) so its first call subscribes. Allow a few minutes after either, then try again.`,
