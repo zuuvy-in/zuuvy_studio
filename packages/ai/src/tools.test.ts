@@ -292,3 +292,14 @@ describe("cart, account and their pages", () => {
     expect(createSiteTools(tree()).tools.map((t) => t.name)).not.toContain("set_commerce");
   });
 });
+
+describe("phone menu", () => {
+  it("lets the builder choose how the header opens on phones, keeping what it does not mention", async () => {
+    const { tools, state } = createSiteTools(tree());
+    await tool(tools, "set_navigation").run({ mobile: { style: "fullscreen", background: "dark", note: "Open 9–9, every day" } });
+    expect(state.tree.nav.mobile).toMatchObject({ style: "fullscreen", background: "dark", note: "Open 9–9, every day", side: "right", icon: "menu", showCta: true });
+    await tool(tools, "set_navigation").run({ mobile: { icon: "grid" } });
+    expect(state.tree.nav.mobile).toMatchObject({ style: "fullscreen", icon: "grid", note: "Open 9–9, every day" });
+    await expect(async () => tool(tools, "set_navigation").run({ mobile: { style: "hamburger" } })).rejects.toThrow();
+  });
+});

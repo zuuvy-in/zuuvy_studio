@@ -20,6 +20,7 @@ import {
   newId,
   Commerce,
   SystemPages,
+  MobileMenu,
   DEFAULT_COMMERCE,
   SectionStyle,
 } from "./tree";
@@ -81,6 +82,7 @@ export const Operation = z.discriminatedUnion("op", [
     brand: z.string().max(60).optional(),
     links: z.array(Link).max(8).optional(),
     cta: Link.nullable().optional(),
+    mobile: patchOf(MobileMenu).optional(),
   }),
   z.object({
     op: z.literal("setFooter"),
@@ -193,6 +195,7 @@ function applyOne(tree: SiteTree, raw: Operation): void {
       if (op.links !== undefined) tree.nav.links = op.links;
       if (op.cta === null) delete tree.nav.cta;
       else if (op.cta !== undefined) tree.nav.cta = op.cta;
+      if (op.mobile) tree.nav.mobile = MobileMenu.parse({ ...tree.nav.mobile, ...op.mobile });
       return;
     case "setFooter":
       if (op.text !== undefined) tree.footer.text = op.text;

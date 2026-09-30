@@ -3,7 +3,7 @@
  * app uses it for live sites; the studio uses the same component for
  * previews, so what the owner reviews is exactly what customers will get.
  */
-import { Commerce, DEFAULT_COMMERCE, type SiteTree } from "@zsite/core";
+import { Commerce, DEFAULT_COMMERCE, DEFAULT_MOBILE_MENU, MobileMenu, type SiteTree } from "@zsite/core";
 import type { ReactNode } from "react";
 import { blockSwitch } from "./blocks";
 import type { RenderContext } from "./context";
@@ -30,6 +30,26 @@ export function CommerceIcon({ name }: { name: keyof typeof ICONS }) {
     </svg>
   );
 }
+
+const MENU_ICONS: Record<MobileMenu["icon"], ReactNode> = {
+  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+  grid: <path d="M5 5h5v5H5zM14 5h5v5h-5zM5 14h5v5H5zM14 14h5v5h-5z" />,
+  dots: <path d="M12 5.5h.01M12 12h.01M12 18.5h.01" strokeWidth="3.2" />,
+};
+
+/** The phone menu's settings, defaults filled in (older trees have none). */
+export function mobileMenuOf(tree: SiteTree): MobileMenu {
+  if (!tree.nav.mobile) return DEFAULT_MOBILE_MENU;
+  const parsed = MobileMenu.safeParse(tree.nav.mobile);
+  return parsed.success ? parsed.data : DEFAULT_MOBILE_MENU;
+}
+
+/**
+ * Closes the phone menu when one of its links is followed (an anchor on the
+ * same page would otherwise leave it covering the section) or Escape pressed.
+ * The menu itself opens and closes without it — a checkbox and CSS.
+ */
+const MENU_SCRIPT = `document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest(".zs-mnav a");var t=document.getElementById("zs-mnav-open");if(a&&t)t.checked=false});document.addEventListener("keydown",function(e){var t=document.getElementById("zs-mnav-open");if(e.key==="Escape"&&t)t.checked=false});`;
 
 /** The store's commerce settings, defaults filled in. */
 export function commerceOf(tree: SiteTree): Commerce {
@@ -82,11 +102,16 @@ export function SiteShell({ tree, ctx, children }: { tree: SiteTree; ctx: Render
   // The cart belongs to stores; accounts to any site that has them switched on.
   const cart = shop && ctx.shop?.cart ? shop : null;
   const account = shop && ctx.shop?.accounts && shop.account.show ? shop : null;
+  // Phones get a menu button whenever there is something to put in it.
+  const menu = mobileMenuOf(tree);
+  const hasMenu = tree.nav.links.length > 0 || Boolean(tree.nav.cta && menu.showCta);
   return (
     <div className="zs-site" style={themeStyle(tree.theme)} data-runtime={RUNTIME_VERSION} data-motion={tree.theme.motion ?? "subtle"}>
       {/* React hoists stylesheet links with a precedence into <head>. */}
       <link rel="stylesheet" href={fontsHref(tree.theme)} precedence="default" />
-      <header className="zs-nav">
+      {/* The phone menu: this box is its open/closed state (no script needed to open it). */}
+      <input type="checkbox" id="zs-mnav-open" className="zs-mnav-state" aria-hidden="true" tabIndex={-1} />
+      <header className="zs-nav" data-mnav={menu.style}>
         <div className="zs-container zs-nav-inner">
           <a href={ctx.href("/")} className="zs-brand">
             {tree.nav.logo && <img src={tree.nav.logo} alt="" className="zs-brand-logo" />}
@@ -104,14 +129,48 @@ export function SiteShell({ tree, ctx, children }: { tree: SiteTree; ctx: Render
               {account && account.account.placement === "nav" && <AccountLink c={account} ctx={ctx} />}
               {cart && cart.cart.placement === "nav" && <CartLink c={cart} ctx={ctx} />}
               {tree.nav.cta && (
-                <a href={ctx.href(tree.nav.cta.href)} className="zs-btn zs-btn-primary zs-btn-sm">
+                <a href={ctx.href(tree.nav.cta.href)} className="zs-btn zs-btn-primary zs-btn-sm zs-nav-cta">
                   {tree.nav.cta.label}
                 </a>
               )}
             </div>
           )}
+          {hasMenu && (
+            <label htmlFor="zs-mnav-open" className="zs-mnav-toggle" aria-label={menu.label ?? "Menu"} role="button">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
+                {MENU_ICONS[menu.icon]}
+              </svg>
+              {menu.label && <span>{menu.label}</span>}
+            </label>
+          )}
         </div>
       </header>
+      {hasMenu && (
+        <div className="zs-mnav" data-style={menu.style} data-side={menu.side} data-bg={menu.background} role="dialog" aria-label="Menu">
+          <label htmlFor="zs-mnav-open" className="zs-mnav-backdrop" aria-label="Close menu" />
+          <div className="zs-mnav-panel">
+            <div className="zs-mnav-head">
+              <span className="zs-brand">{tree.nav.brand}</span>
+              <label htmlFor="zs-mnav-open" className="zs-mnav-close" aria-label="Close menu" role="button">×</label>
+            </div>
+            <nav className="zs-mnav-links" aria-label="Menu">
+              {tree.nav.links.map((l, i) => (
+                <a key={i} href={ctx.href(l.href)} style={{ ["--i" as string]: i }}>
+                  {l.label}
+                </a>
+              ))}
+              {account && account.account.placement === "footer" && <a href={ctx.href("/account")}>{account.account.label}</a>}
+            </nav>
+            {menu.showCta && tree.nav.cta && (
+              <a href={ctx.href(tree.nav.cta.href)} className="zs-btn zs-btn-primary zs-mnav-cta">
+                {tree.nav.cta.label}
+              </a>
+            )}
+            {menu.note && <p className="zs-mnav-note">{menu.note}</p>}
+          </div>
+          <script dangerouslySetInnerHTML={{ __html: MENU_SCRIPT }} />
+        </div>
+      )}
       <main>{children}</main>
       {cart && cart.cart.placement === "floating" && <CartLink c={cart} ctx={ctx} floating />}
       {cart && cart.cart.style === "drawer" && ctx.shop?.drawer && (
