@@ -1,13 +1,15 @@
 import { listCustomers, withTenant } from "@zsite/platform";
 import { Card, EmptyState, PageHeader } from "@/components/ui";
 import { ago, inr } from "@/lib/format";
+import { pageScope } from "@/lib/scope";
 import { requireSession } from "@/lib/session";
 
 export const metadata = { title: "Customers" };
 
-export default async function CustomersPage() {
+export default async function CustomersPage({ params }: { params: Promise<{ siteId?: string }> }) {
   const session = await requireSession();
-  const customers = await withTenant(session.tenant.id, (tx) => listCustomers(tx));
+  const { siteId, base } = await pageScope(params);
+  const customers = await withTenant(session.tenant.id, (tx) => listCustomers(tx, siteId));
   return (
     <>
       <PageHeader

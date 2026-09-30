@@ -16,7 +16,12 @@ import {
   parseLanding,
 
   deleteRows,
+  applyTableOps,
   deleteSiteTable,
+  getSiteTable,
+  importRows,
+  parseCsv,
+  queryRows,
   drainOutbox,
   emailVerified,
   getSite,
@@ -265,5 +270,71 @@ describe("starting from the landing page", () => {
     expect(first).toMatchObject({ name: "Default", kind: "store", subdomain: "ravi-mobiles", published_number: null });
     const second = await make();
     expect(second.subdomain).toMatch(/^ravi-mobiles-[0-9a-f]{4}$/);
+  });
+});
+
+describe("the Data grid", () => {
+  const leads = async () => {
+    await withTenant(a.tenantId, (tx) =>
+      applyTableOps(tx, siteId, [
+        {
+          op: "create",
+          key: "leads",
+          name: "Leads",
+          columns: [
+            { key: "name", label: "Name", type: "text" },
+            { key: "email", label: "Email", type: "email" },
+            { key: "budget", label: "Budget", type: "number" },
+            { key: "plan", label: "Plan", type: "select" },
+            { key: "vip", label: "VIP", type: "checkbox" },
+          ],
+        },
+      ]),
+    );
+    const t = (await withTenant(a.tenantId, (tx) => listSiteTables(tx, siteId))).find((t) => t.key === "leads")!;
+    return withTenant(a.tenantId, (tx) => getSiteTable(tx, siteId, t.id));
+  };
+
+  it("reads CSV the way spreadsheets write it", () => {
+    expect(parseCsv('\uFEFFName,Note\r\n"Ravi, Jr","said ""hi""\nthen left"\r\n\r\nAsha,\n')).toEqual([
+      ["Name", "Note"],
+      ["Ravi, Jr", 'said "hi"\nthen left'],
+      ["Asha", ""],
+    ]);
+  });
+
+  it("appends, then overwrites or skips duplicates, then replaces — and searches, filters and sorts", async () => {
+    const table = await leads();
+    const imp = (csv: string, mode: "append" | "replace" | "update" | "skip", matchOn?: string[]) =>
+      withTenant(a.tenantId, (tx) => importRows(tx, table, csv, { mode, matchOn }));
+
+    const first = await imp("Email,Name,Budget,Plan,VIP,Ignored\nravi@x.in,Ravi,5000,Gold,yes,z\nasha@x.in,Asha,900,Basic,no,z\nbad,Bad,1,Basic,no,z", "append");
+    expect(first).toMatchObject({ added: 2, skipped: [{ line: 4, reason: expect.stringMatching(/email/) }] });
+
+    const upd = await imp("email,budget\nRAVI@x.in,7000\nnew@x.in,100\nnew@x.in,200", "update");
+    expect(upd).toMatchObject({ added: 1, updated: 1, duplicates: 2 });
+    const skip = await imp("email,name\nasha@x.in,Changed\nlata@x.in,Lata", "skip");
+    expect(skip).toMatchObject({ added: 1, updated: 0, duplicates: 1 });
+    await expect(imp("name\nNo email", "skip")).rejects.toThrow(/needs a Email column/);
+
+    const q = (query: Parameters<typeof queryRows>[2]) => withTenant(a.tenantId, (tx) => queryRows(tx, table, query));
+    expect((await q({})).total).toBe(4);
+    const ravi = (await q({ q: "ravi" })).rows;
+    expect(ravi.map((r) => r.data)).toEqual([{ name: "Ravi", email: "ravi@x.in", budget: 7000, plan: "Gold", vip: true }]);
+    expect((await q({ filters: { vip: "Yes" } })).total).toBe(1);
+    expect((await q({ filters: { plan: "Basic" } })).rows.map((r) => r.data.name)).toEqual(["Asha"]);
+    expect((await q({ filters: { name: "100%" } })).total).toBe(0);
+    expect((await q({ sort: "budget", dir: "desc" })).rows.map((r) => r.data.budget ?? null)).toEqual([7000, 900, 200, null]);
+    const paged = await q({ perPage: 3, page: 2 });
+    expect(paged).toMatchObject({ total: 4, page: 2, pages: 2 });
+    expect(paged.rows).toHaveLength(1);
+
+    const replaced = await imp("Name,Email\nOnly,only@x.in", "replace");
+    expect(replaced).toMatchObject({ removed: 4, added: 1 });
+    expect((await q({})).total).toBe(1);
+    // A file it cannot use never empties the table.
+    await expect(imp("Nothing,Useful\n1,2", "replace")).rejects.toThrow(/None of the file's columns/);
+    expect((await imp("Email\nnot-an-email", "replace")).removed).toBe(0);
+    expect((await q({})).total).toBe(1);
   });
 });

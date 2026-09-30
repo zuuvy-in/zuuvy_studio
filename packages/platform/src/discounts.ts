@@ -21,6 +21,8 @@ export type DiscountScope = "all" | "products" | "groups" | "categories";
 
 export type Discount = {
   id: string;
+  /** The store it applies in; null = every store. */
+  site_id: string | null;
   name: string;
   code: string | null;
   kind: DiscountKind;
@@ -43,7 +45,7 @@ export type Discount = {
 
 const COLUMNS = `id, name, code, kind, value::float8 as value, scope, scope_ids, min_subtotal::float8 as min_subtotal,
   min_quantity, max_amount::float8 as max_amount, starts_at, ends_at, usage_limit, used_count, once_per_customer,
-  first_order_only, stacks, active, created_at`;
+  first_order_only, stacks, active, created_at, site_id`;
 
 /** A cart line as discounts see it. */
 export type DiscountLine = { productId: string; groupId: string | null; category: string | null; quantity: number; lineTotal: number };
@@ -228,14 +230,14 @@ async function codeFree(tx: Tx, code: string | null, exceptId?: string) {
   if (clash) throw new UserError(`The code ${code} is already used by another discount.`);
 }
 
-export async function createDiscount(tx: Tx, input: DiscountInput): Promise<Discount> {
+export async function createDiscount(tx: Tx, input: DiscountInput & { siteId?: string | null }): Promise<Discount> {
   const d = clean(input);
   await codeFree(tx, d.code);
   return tx.get<Discount>(
     `insert into discounts (tenant_id, name, code, kind, value, scope, scope_ids, min_subtotal, min_quantity, max_amount,
-                            starts_at, ends_at, usage_limit, once_per_customer, first_order_only, stacks, active)
-     values (app_tenant(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) returning ${COLUMNS}`,
-    values(d),
+                            starts_at, ends_at, usage_limit, once_per_customer, first_order_only, stacks, active, site_id)
+     values (app_tenant(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) returning ${COLUMNS}`,
+    [...values(d), input.siteId ?? null],
   );
 }
 
@@ -258,8 +260,11 @@ export async function deleteDiscount(tx: Tx, id: string): Promise<void> {
   await tx.get("delete from discounts where id = $1 returning id", [id], "discount");
 }
 
-export async function listDiscounts(tx: Tx): Promise<Discount[]> {
-  return tx.query<Discount>(`select ${COLUMNS} from discounts order by active desc, created_at desc`);
+export async function listDiscounts(tx: Tx, siteId?: string): Promise<Discount[]> {
+  return tx.query<Discount>(
+    `select ${COLUMNS} from discounts ${siteId ? "where site_id is null or site_id = $1" : ""} order by active desc, created_at desc`,
+    siteId ? [siteId] : [],
+  );
 }
 
 export async function getDiscount(tx: Tx, id: string): Promise<Discount> {
@@ -268,8 +273,11 @@ export async function getDiscount(tx: Tx, id: string): Promise<Discount> {
 }
 
 /** The discounts that could apply now; the rules themselves are checked per cart. */
-export async function liveDiscounts(tx: Tx): Promise<Discount[]> {
-  return tx.query<Discount>(`select ${COLUMNS} from discounts where active and (ends_at is null or ends_at > now())`);
+export async function liveDiscounts(tx: Tx, siteId?: string | null): Promise<Discount[]> {
+  return tx.query<Discount>(
+    `select ${COLUMNS} from discounts where active and (ends_at is null or ends_at > now()) and (site_id is null or site_id = $1)`,
+    [siteId ?? null],
+  );
 }
 
 /** What the per-customer rules need: earlier orders and offers already used, by account or phone. */

@@ -334,3 +334,93 @@ names by meaning, locally and through Iconify's public search when reachable.
 
 **Skills** (`ai/src/skills.ts`): web design, content and animation guidance written for these blocks. They are
 part of the build and plan prompts, and the design kit serves them as MCP prompts and a `skill` tool.
+
+## Pictures: libraries, not generation
+
+No picture is generated unless `ZSITE_IMAGE_GENERATION=1`. The AI uses the
+owner's media first, then real photography (`design__search_photos`,
+Unsplash), then icons and illustrations from Icons8 when its MCP server is
+connected (`ZSITE_MCP_SERVERS=[{"name":"icons8","url":"https://mcp.icons8.com/mcp/"}]`).
+Icons8's clean download links expire, so the AI re-hosts what it keeps with
+`save_image` (`media.importImage`): https only, hosts from `ZSITE_IMPORT_HOSTS`
+(default Icons8's), fetched through the same pinned-DNS guard as references,
+SVG accepted only when `safeSvg` finds nothing that could run. The theme records
+the icon family (`iconPack`) and illustration style so later edits match.
+The Icons8 guidance is adapted from icons8/agent-skills (Apache-2.0; see
+`packages/ai/THIRD_PARTY_NOTICES.md`).
+
+## Forms and the Data tab
+
+`form` and `table` are real blocks; text props refuse HTML (`checkNoHtml`), so
+a table or form can no longer arrive as markup printed on the page. A form
+either opens a URL with its answers as parameters (GET) or stores them in a
+**site table** (`site_tables`/`site_table_rows`, migration 0005). The AI
+creates and changes tables with the version that uses them (`EditResult.tableOps`,
+applied in `generateVersion`'s transaction) and can only *propose* deleting one
+(`ai_meta.tableDeletes`, shown on the version page) — rows are people's messages.
+
+A submission (`POST /api/form` on the renderer → `submitForm`) is checked
+against the form as published — types, required answers, select options — not
+against the browser; a filled honeypot or an answer inside 1.5 s is quietly
+dropped. New rows email the business's alert addresses when the table's
+`notify` is on.
+
+The studio's **Data** tab per site lists every table as a grid: search,
+per-column filters, sort, pages (`queryRows`), export of what is filtered, and
+CSV import (`importRows`) that adds, replaces the table, overwrites duplicates
+or skips them, matching on chosen columns (email by default). Cells are checked
+like form answers; a file that cannot be read never empties the table.
+
+## Signing up from the landing page, and email verification
+
+`docs/SIGNUP_FROM_LANDING.md` lists the URL parameters. Signing up with any of
+`kind`/`site`/`tagline`/`prompt`/`subdomain` creates the site (`createStarterSite`)
+and opens the builder with the prompt. Every new account is emailed a link;
+**nothing it builds is published until the email is confirmed** — the starter
+site is created unpublished and `publishVersion` refuses (`canPublish`).
+
+## Each store keeps its own
+
+Products, variant groups, discounts and plugins carry a `site_id`; null means
+"every store of the business" (the synced catalogue, older rows). A store sells
+its own and the shared rows only (`asSold`, `storefrontProducts`,
+`liveDiscounts`, plugin hooks, `placeOrder`). The studio serves the same pages
+at `/products` (every store) and `/sites/<id>/products` (one store): the site
+routes re-export the root pages, which read their scope from the route
+(`lib/scope.ts`), and every `ActionForm` under a site posts it as `_scope`.
+The root menu shows these pages only for 2+ stores (Customers for 2+ sites
+with accounts).
+
+## Accounts, the cart and the system pages
+
+Customer accounts are a per-site switch (`sites.accounts`, always on for a
+store); a cart exists only on a store. `commerce` in the tree decides how the
+cart and account links are drawn (`display`: icon, icon + word, word, button,
+pill) and how the pages outside the tree look (`commerce.pages`: frame,
+sign-in layout, headings, perks, empty-cart words, thank-you). The AI sets them
+with `set_commerce`; a site with accounts but nothing to sell gets only the
+account half. Trees are stored as written, so `commerceOf` parses them: a
+setting added later takes its default rather than crashing an old site.
+
+## Preview feedback
+
+Right-click anything in the studio preview (shift + right-click keeps the
+browser menu). `components/feedback-bridge.tsx` runs inside the preview iframe,
+names the page, the section (`data-section` on every block) and the element,
+and posts it to the studio; `components/feedback.tsx` collects notes (kept in
+the browser per version) and sends them as one request based on the previewed
+version.
+
+## Premade sites
+
+Ten designs (`core/src/showcase.ts`) are seeded as real, published sites on the
+platform admin's account by `npm run db:seed:showcase` (idempotent; photos from
+Unsplash by what each slot should show, placeholders without a key) and offered
+as **showcases** (`showcases` table, migration 0008). Customers see them on
+Create a site, preview the live site, and fork one: `forkShowcase` copies the
+published version, brand kit, form tables and — for a store, if asked — the
+sample products, and swaps the sample business name for theirs. Everything
+crosses tenants only through the `list_showcases`/`showcase_source`/
+`showcase_products` functions, which hand out active showcases and nothing else;
+`set_showcase` checks the caller is a platform admin and a member of the
+site's business. Admins manage them under Platform admin → Premade sites.

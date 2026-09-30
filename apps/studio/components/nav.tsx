@@ -4,27 +4,29 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon, type IconName, cx } from "./ui";
 
-type Item = { href: string; label: string; icon: IconName; exact?: boolean; when?: "commerce" | "admin" };
+type Item = { href: string; label: string; icon: IconName; exact?: boolean; when?: "stores" | "accounts" | "admin" };
 
 const ITEMS: Item[] = [
   { href: "/", label: "Overview", icon: "home", exact: true },
   { href: "/sites", label: "Sites", icon: "globe" },
   { href: "/media", label: "Media", icon: "image" },
-  { href: "/integrations", label: "Integrations", icon: "plug" },
-  // Only a business with a store has anything to sell or deliver.
-  { href: "/products", label: "Products", icon: "box", when: "commerce" },
-  { href: "/orders", label: "Orders", icon: "cart", when: "commerce" },
-  { href: "/discounts", label: "Discounts", icon: "tag", when: "commerce" },
-  { href: "/customers", label: "Customers", icon: "users", when: "commerce" },
-  { href: "/plugins", label: "Plugins", icon: "plug", when: "commerce" },
+  // Selling lives under each store (Sites → a store). Up here these pages add
+  // up every store, so they appear once there is more than one to add up.
+  { href: "/products", label: "Products", icon: "box", when: "stores" },
+  { href: "/orders", label: "Orders", icon: "cart", when: "stores" },
+  { href: "/discounts", label: "Discounts", icon: "tag", when: "stores" },
+  { href: "/customers", label: "Customers", icon: "users", when: "accounts" },
+  { href: "/plugins", label: "Plugins", icon: "plug", when: "stores" },
+  { href: "/integrations", label: "Integrations", icon: "plug", when: "stores" },
   { href: "/usage", label: "AI usage", icon: "sparkles" },
   { href: "/settings", label: "Settings", icon: "settings" },
   { href: "/admin", label: "Platform admin", icon: "shield", when: "admin" },
 ];
 
-export function SidebarNav({ commerce = false, admin = false }: { commerce?: boolean; admin?: boolean }) {
+export function SidebarNav({ stores = 0, accounts = 0, admin = false }: { stores?: number; accounts?: number; admin?: boolean }) {
   const path = usePathname();
-  const items = ITEMS.filter((i) => !i.when || (i.when === "commerce" ? commerce : admin));
+  const show = { stores: stores >= 2, accounts: accounts >= 2, admin };
+  const items = ITEMS.filter((i) => !i.when || show[i.when]);
   return (
     <nav className="flex gap-1 overflow-x-auto md:flex-col" aria-label="Main">
       {items.map((item) => {

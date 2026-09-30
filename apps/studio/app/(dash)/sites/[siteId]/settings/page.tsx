@@ -101,6 +101,18 @@ export default async function SettingsPage({ params }: { params: Promise<{ siteI
               The AI builds to the type you choose.
             </p>
           </div>
+          <label className="flex items-start gap-3 text-sm">
+            <input type="checkbox" name="accounts" value="1" defaultChecked={site.accounts || site.kind === "store"} disabled={site.kind === "store"} className="mt-1" />
+            <span>
+              <strong className="text-slate-900">Customer accounts</strong>
+              <br />
+              <span className="text-slate-600">
+                {site.kind === "store"
+                  ? "Always on for a store: customers sign in to check out faster and follow their orders."
+                  : "Let visitors sign up and sign in — for members, bookings or a client area. An account link appears where the design puts it; there is no cart unless the site is a store."}
+              </span>
+            </span>
+          </label>
           <SubmitButton pending="Saving…">Save</SubmitButton>
         </ActionForm>
       </Card>

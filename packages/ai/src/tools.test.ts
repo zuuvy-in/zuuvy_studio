@@ -254,3 +254,29 @@ describe("forms, tables and plain text", () => {
     expect(seen).toEqual([{ url: "https://img.icons8.com/x.png", svg: undefined, alt: "A cake" }]);
   });
 });
+
+describe("cart, account and their pages", () => {
+  it("lets a store style its cart and account and write its own pages", async () => {
+    const { tools, state } = createSiteTools(tree(), { commerceTools: "store" });
+    await tool(tools, "set_commerce").run({
+      cart: { display: "pill", label: "Basket" },
+      account: { display: "label" },
+      pages: { frame: "tinted", auth: { layout: "centered", perks: ["Reorder in one tap"] }, cart: { empty: "Nothing here yet" }, thanks: { heading: "Shukriya, {name}!" } },
+    });
+    const c = state.tree.commerce!;
+    expect(c.cart).toMatchObject({ display: "pill", label: "Basket", style: "drawer" });
+    expect(c.account.display).toBe("label");
+    expect(c.pages).toMatchObject({ frame: "tinted", auth: { layout: "centered", perks: ["Reorder in one tap"] }, cart: { empty: "Nothing here yet" } });
+    // A later change keeps what it does not mention.
+    await tool(tools, "set_commerce").run({ pages: { auth: { heading: "Welcome back" } } });
+    expect(state.tree.commerce!.pages.auth).toMatchObject({ layout: "centered", heading: "Welcome back", perks: ["Reorder in one tap"] });
+  });
+
+  it("gives a site with accounts but nothing to sell no cart", async () => {
+    const { tools, state } = createSiteTools(tree(), { commerceTools: "accounts" });
+    await expect(async () => tool(tools, "set_commerce").run({ cart: { display: "button" } })).rejects.toThrow(/no cart/);
+    await tool(tools, "set_commerce").run({ account: { label: "Members", display: "button" }, pages: { auth: { layout: "image", image: "https://images.unsplash.com/x" } } });
+    expect(state.tree.commerce!.account).toMatchObject({ label: "Members", display: "button" });
+    expect(createSiteTools(tree()).tools.map((t) => t.name)).not.toContain("set_commerce");
+  });
+});

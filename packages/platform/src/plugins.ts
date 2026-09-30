@@ -28,6 +28,8 @@ export type Hook = (typeof HOOKS)[number];
 
 export type Plugin = {
   id: string;
+  /** The store it takes part in; null = every store. */
+  site_id: string | null;
   name: string;
   url: string;
   hooks: Hook[];
@@ -37,7 +39,7 @@ export type Plugin = {
   created_at: Date;
 };
 
-const COLUMNS = "id, name, url, hooks, active, last_error, last_called_at, created_at";
+const COLUMNS = "id, name, url, hooks, active, last_error, last_called_at, created_at, site_id";
 
 export type Adjustment = { plugin: string; label: string; amount: number };
 export type PluginMessage = { plugin: string; text: string; tone: "info" | "success" | "warning" };
@@ -85,9 +87,9 @@ export function sign(secret: string, body: string, t = Math.floor(Date.now() / 1
 
 type Loaded = Plugin & { secret: string };
 
-async function pluginsFor(tenantId: string, hook: Hook): Promise<Loaded[]> {
+async function pluginsFor(tenantId: string, hook: Hook, siteId?: string | null): Promise<Loaded[]> {
   return withTenant(tenantId, (tx) =>
-    tx.query<Loaded>(`select ${COLUMNS}, secret from plugins where active and hooks ? $1 order by created_at`, [hook]),
+    tx.query<Loaded>(`select ${COLUMNS}, secret from plugins where active and hooks ? $1 and (site_id is null or site_id = $2) order by created_at`, [hook, siteId ?? null]),
   );
 }
 
@@ -108,8 +110,8 @@ async function call(tenantId: string, p: Loaded, hook: Hook, payload: Record<str
   return error ? null : json;
 }
 
-async function each<T>(tenantId: string, hook: Hook, payload: Record<string, unknown>, schema: z.ZodType<T>): Promise<{ plugin: Loaded; answer: T }[]> {
-  const plugins = await pluginsFor(tenantId, hook);
+async function each<T>(tenantId: string, hook: Hook, payload: Record<string, unknown>, schema: z.ZodType<T>, siteId?: string | null): Promise<{ plugin: Loaded; answer: T }[]> {
+  const plugins = await pluginsFor(tenantId, hook, siteId);
   const answers = await Promise.all(
     plugins.map(async (p) => {
       const json = await call(tenantId, p, hook, payload);
@@ -126,8 +128,8 @@ async function each<T>(tenantId: string, hook: Hook, payload: Record<string, unk
 }
 
 /** Adjustments and messages for a cart. Amounts are bounded by the subtotal; the caller keeps the total at or above zero. */
-export async function calculateHooks(tenantId: string, payload: Record<string, unknown>, subtotal: number) {
-  const answers = await each(tenantId, "cart.calculate", payload, CalculateAnswer);
+export async function calculateHooks(tenantId: string, payload: Record<string, unknown>, subtotal: number, siteId?: string | null) {
+  const answers = await each(tenantId, "cart.calculate", payload, CalculateAnswer, siteId);
   const adjustments: Adjustment[] = [];
   const messages: PluginMessage[] = [];
   for (const { plugin, answer } of answers) {
@@ -140,8 +142,8 @@ export async function calculateHooks(tenantId: string, payload: Record<string, u
   return { adjustments, messages };
 }
 
-export async function checkoutFields(tenantId: string, payload: Record<string, unknown>): Promise<CheckoutField[]> {
-  const answers = await each(tenantId, "checkout.fields", payload, FieldsAnswer);
+export async function checkoutFields(tenantId: string, payload: Record<string, unknown>, siteId?: string | null): Promise<CheckoutField[]> {
+  const answers = await each(tenantId, "checkout.fields", payload, FieldsAnswer, siteId);
   const taken = new Set<string>();
   const out: CheckoutField[] = [];
   for (const { plugin, answer } of answers) {
@@ -155,8 +157,8 @@ export async function checkoutFields(tenantId: string, payload: Record<string, u
 }
 
 /** The first refusal, in the plugin's words; null when every plugin is content (or unreachable). */
-export async function validateHooks(tenantId: string, payload: Record<string, unknown>): Promise<string | null> {
-  const answers = await each(tenantId, "checkout.validate", payload, ValidateAnswer);
+export async function validateHooks(tenantId: string, payload: Record<string, unknown>, siteId?: string | null): Promise<string | null> {
+  const answers = await each(tenantId, "checkout.validate", payload, ValidateAnswer, siteId);
   const no = answers.find((a) => !a.answer.ok);
   return no ? no.answer.error || `${no.plugin.name} could not accept this order.` : null;
 }
@@ -207,17 +209,20 @@ function cleanInput(input: { name: string; url: string; hooks: string[] }) {
   return { name, url, hooks };
 }
 
-export async function listPlugins(tx: Tx): Promise<Plugin[]> {
-  return tx.query<Plugin>(`select ${COLUMNS} from plugins order by created_at`);
+export async function listPlugins(tx: Tx, siteId?: string): Promise<Plugin[]> {
+  return tx.query<Plugin>(`select ${COLUMNS} from plugins ${siteId ? "where site_id is null or site_id = $1" : ""} order by created_at`, siteId ? [siteId] : []);
 }
 
 /** Returns the signing secret once; it is stored sealed and never shown again. */
-export async function createPlugin(tx: Tx, input: { name: string; url: string; hooks: string[] }): Promise<{ plugin: Plugin; secret: string }> {
+export async function createPlugin(
+  tx: Tx,
+  input: { name: string; url: string; hooks: string[]; siteId?: string | null },
+): Promise<{ plugin: Plugin; secret: string }> {
   const p = cleanInput(input);
   const secret = `zsp_${randomToken(24)}`;
   const plugin = await tx.get<Plugin>(
-    `insert into plugins (tenant_id, name, url, hooks, secret) values (app_tenant(), $1, $2, $3, $4) returning ${COLUMNS}`,
-    [p.name, p.url, JSON.stringify(p.hooks), seal({ secret })],
+    `insert into plugins (tenant_id, name, url, hooks, secret, site_id) values (app_tenant(), $1, $2, $3, $4, $5) returning ${COLUMNS}`,
+    [p.name, p.url, JSON.stringify(p.hooks), seal({ secret }), input.siteId ?? null],
   );
   return { plugin, secret };
 }
@@ -245,6 +250,8 @@ export async function deletePlugin(tx: Tx, id: string): Promise<void> {
 }
 
 /** Plugins told about new orders; the order's transaction queues one job each. */
-export async function orderPlacedPlugins(tx: Tx): Promise<string[]> {
-  return (await tx.query<{ id: string }>("select id from plugins where active and hooks ? 'order.placed'")).map((r) => r.id);
+export async function orderPlacedPlugins(tx: Tx, siteId?: string | null): Promise<string[]> {
+  return (
+    await tx.query<{ id: string }>("select id from plugins where active and hooks ? 'order.placed' and (site_id is null or site_id = $1)", [siteId ?? null])
+  ).map((r) => r.id);
 }

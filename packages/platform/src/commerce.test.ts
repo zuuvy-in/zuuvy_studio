@@ -11,6 +11,11 @@ import {
   createPlugin,
   createProduct,
   createSite,
+  listCustomers,
+  listDiscounts,
+  listOrders,
+  listProducts,
+  siteCounts,
   customerFromSession,
   customerOrder,
   customerOrders,
@@ -109,6 +114,7 @@ describe("variant groups", () => {
 describe("discount rules", () => {
   const rule = (over: Partial<Discount>): Discount => ({
     id: over.id ?? "d",
+    site_id: null,
     name: "Offer",
     code: null,
     kind: "percent",
@@ -253,5 +259,46 @@ describe("cart, checkout and plugins", () => {
     const quote = await quoteCart(site, [{ productId: product.id, quantity: 3 }]);
     expect(quote.ready).toBe(false);
     expect(quote.lines[0]?.problem).toBe("Only 1 left");
+  });
+});
+
+describe("each store keeps its own", () => {
+  it("sells only its own and the shared products, applies only its own and shared offers, and lists its own people", async () => {
+    const other = await withTenant(a.tenantId, (tx) =>
+      createSite(tx, { name: "Meera Kids", subdomain: "meera-kids", templateId: "store-classic", templateInput: { businessName: "Meera" }, userId: a.userId }),
+    );
+    await withTenant(a.tenantId, (tx) => setInventory(tx, other.id, "studio", null));
+    const second = { tenantId: a.tenantId, siteId: other.id };
+    const [mine, shared] = await withTenant(a.tenantId, async (tx) => [
+      await createProduct(tx, { name: "Kids tee", price: 300, siteId: other.id }),
+      await createProduct(tx, { name: "Gift card", price: 500, siteId: null }),
+    ]);
+    const firstTree = (await withTenant(a.tenantId, (tx) => latestVersion(tx, site.siteId))).tree!;
+    const secondTree = (await withTenant(a.tenantId, (tx) => latestVersion(tx, other.id))).tree!;
+    const names = async (r: typeof site, tree: typeof firstTree) => (await storefrontData(r, tree)).map((p) => p.name);
+    expect(await names(second, secondTree)).toEqual(expect.arrayContaining(["Kids tee", "Gift card"]));
+    expect(await names(site, firstTree)).not.toContain("Kids tee");
+    expect(await names(site, firstTree)).toContain("Gift card");
+    // Not by guessing an id either.
+    const q = await quoteCart(site, [{ productId: mine!.id, quantity: 1 }]);
+    expect(q.ready).toBe(false);
+    expect(q.lines[0]?.problem ?? "gone").toBeTruthy();
+
+    await withTenant(a.tenantId, (tx) => createDiscount(tx, { name: "Kids week", kind: "percent", value: 20, siteId: other.id }));
+    const kids = await quoteCart(second, [{ productId: mine!.id, quantity: 1 }]);
+    expect(kids.discount).toBe(60);
+    const elsewhere = await quoteCart(site, [{ productId: shared!.id, quantity: 1 }]);
+    expect(elsewhere.discounts.map((d) => d.name)).not.toContain("Kids week");
+
+    await signUpCustomer(a.tenantId, { name: "Kid Parent", email: "parent@kids.test", password: "password-k", siteId: other.id });
+    await withTenant(a.tenantId, async (tx) => {
+      expect((await listCustomers(tx, other.id)).map((c) => c.email)).toEqual(["parent@kids.test"]);
+      expect((await listCustomers(tx, site.siteId)).map((c) => c.email)).not.toContain("parent@kids.test");
+      expect((await listCustomers(tx)).map((c) => c.email)).toContain("parent@kids.test");
+      expect((await listProducts(tx, { siteId: site.siteId })).map((p) => p.name)).not.toContain("Kids tee");
+      expect((await listDiscounts(tx, site.siteId)).map((d) => d.name)).not.toContain("Kids week");
+      expect(await listOrders(tx, { siteId: other.id })).toEqual([]);
+      expect(await siteCounts(tx)).toMatchObject({ stores: 2, accounts: 2 });
+    });
   });
 });

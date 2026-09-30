@@ -97,7 +97,8 @@ export type ToolCapabilities = {
    */
   dataTools?: boolean;
   /** A store: the cart, checkout and account presentation can be set (set_commerce). */
-  commerceTools?: boolean;
+  /** "store": cart, checkout and accounts; "accounts": a site with sign-in but nothing to sell. */
+  commerceTools?: boolean | "store" | "accounts";
   /** The site's tables (for forms). Present = the table tools are offered. */
   tables?: TableSummary[];
   /** Per edit, so one prompt cannot spend a month of image budget. */
@@ -446,23 +447,68 @@ export function createSiteTools(initial: SiteTree, caps: ToolCapabilities = {}, 
     );
   }
 
-  if (caps.commerceTools) tools.push(
-    siteTool({
-      name: "set_commerce",
-      description:
-        "Decide how this store sells: the cart (drawer or page, icon, in the header or a floating button, optional label), the product buttons (add to cart, buy now, both), the checkout (one page or steps, summary beside or above, note field, heading, a reassurance line under Place order) and the customer account link (shown or not, header or footer, label). Send only what changes. Fit it to the store: a few big-ticket items suit buy now and a one-page checkout; a large catalogue suits a cart drawer and add to cart.",
-      inputSchema: z.object({
-        cart: z.object({ style: z.enum(["drawer", "page"]), icon: z.enum(["bag", "cart", "basket"]), placement: z.enum(["nav", "floating"]), label: z.string().max(20) }).partial().optional(),
-        buy: z.enum(["add_to_cart", "buy_now", "both"]).optional(),
-        checkout: z
-          .object({ layout: z.enum(["single", "steps"]), summary: z.enum(["side", "top"]), askNote: z.boolean(), heading: z.string().max(80), reassurance: z.string().max(200) })
-          .partial()
-          .optional(),
-        account: z.object({ show: z.boolean(), placement: z.enum(["nav", "footer"]), label: z.string().max(20) }).partial().optional(),
+  if (caps.commerceTools) {
+    const store = caps.commerceTools !== "accounts";
+    const display = z.enum(["icon", "icon_label", "label", "button", "pill"]);
+    const words = (max: number) => z.string().max(max);
+    tools.push(
+      siteTool({
+        name: "set_commerce",
+        description: [
+          store
+            ? "Decide how this store sells and how its shopping pieces look — they are part of the design, so fit them to the header, the brand and the customer. Send only what changes."
+            : "Decide how this site's customer accounts look (the site has sign-in but sells nothing: there is no cart). Send only what changes.",
+          store
+            ? "cart: drawer or its own page; icon bag/cart/basket; in the header (nav) or a floating round button (long, image-led mobile pages); label; display. buy: add to cart, buy now, or both (a few big-ticket items suit buy now; a large catalogue a drawer and add to cart). checkout: one page or steps, summary beside or above, note field, heading, a reassurance line under Place order."
+            : "",
+          "account: shown or not, header or footer, label, display.",
+          "display (cart and account): icon for a minimal header, icon_label or label to match a text menu, button for a solid call to action (use sparingly — never both as buttons next to the header's own CTA), pill for a soft outlined chip. The account usually sits quieter than the cart.",
+          `pages: the pages outside the site's sections, drawn in its theme. frame: plain, card or tinted. auth (sign in / sign up): layout centered, split or image (with an image from the media library or photo search), heading, intro, perks (up to 4 short reasons to join), signInHeading, signUpHeading. account: heading ("{name}" = first name), ordersHeading, emptyOrders.${store ? " cart: heading, empty (an empty cart in the brand's voice), continueLabel. thanks: heading and message after an order (\"{name}\" works)." : ""} Write them in the site's voice.`,
+        ]
+          .filter(Boolean)
+          .join(" "),
+        inputSchema: z.object({
+          cart: z
+            .object({ style: z.enum(["drawer", "page"]), icon: z.enum(["bag", "cart", "basket"]), placement: z.enum(["nav", "floating"]), label: words(20), display })
+            .partial()
+            .optional(),
+          buy: z.enum(["add_to_cart", "buy_now", "both"]).optional(),
+          checkout: z
+            .object({ layout: z.enum(["single", "steps"]), summary: z.enum(["side", "top"]), askNote: z.boolean(), heading: words(80), reassurance: words(200) })
+            .partial()
+            .optional(),
+          account: z.object({ show: z.boolean(), placement: z.enum(["nav", "footer"]), label: words(20), display }).partial().optional(),
+          pages: z
+            .object({
+              frame: z.enum(["plain", "card", "tinted"]),
+              auth: z
+                .object({
+                  layout: z.enum(["centered", "split", "image"]),
+                  heading: words(80),
+                  intro: words(200),
+                  image: z.string().max(500),
+                  perks: z.array(words(60)).max(4),
+                  signInHeading: words(40),
+                  signUpHeading: words(40),
+                })
+                .partial(),
+              account: z.object({ heading: words(60), ordersHeading: words(40), emptyOrders: words(120) }).partial(),
+              cart: z.object({ heading: words(40), empty: words(120), continueLabel: words(30) }).partial(),
+              thanks: z.object({ heading: words(60), message: words(200) }).partial(),
+            })
+            .partial()
+            .optional(),
+        }),
+        run: (i) => {
+          if (!store && (i.cart || i.buy || i.checkout || i.pages?.cart || i.pages?.thanks)) {
+            throw new ToolInputError("This site sells nothing, so it has no cart, checkout or order pages — only the account settings apply.");
+          }
+          checkNoHtml(i, "commerce");
+          return apply({ op: "setCommerce", commerce: i });
+        },
       }),
-      run: (i) => apply({ op: "setCommerce", commerce: i }),
-    }),
-  );
+    );
+  }
 
   if (caps.dataTools !== false) tools.push(
     siteTool({

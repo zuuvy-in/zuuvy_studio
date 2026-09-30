@@ -5,17 +5,19 @@ import { Tabs } from "@/components/nav";
 import { groupSelectedAction } from "./actions";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { ago, inr } from "@/lib/format";
+import { pageScope } from "@/lib/scope";
 import { requireSession } from "@/lib/session";
 
 export const metadata = { title: "Products" };
 
-export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ q?: string; hidden?: string }> }) {
+export default async function ProductsPage({ params, searchParams }: { params: Promise<{ siteId?: string }>; searchParams: Promise<{ q?: string; hidden?: string }> }) {
   const q = await searchParams;
   const session = await requireSession();
+  const { siteId, base } = await pageScope(params);
   const { products, manages, groups } = await withTenant(session.tenant.id, async (tx) => ({
-    products: await listProducts(tx, { q: q.q, includeHidden: q.hidden === "1" }),
+    products: await listProducts(tx, { q: q.q, includeHidden: q.hidden === "1", siteId }),
     manages: await managesProducts(tx),
-    groups: await listGroups(tx),
+    groups: await listGroups(tx, siteId),
   }));
   const byId = new Map(groups.map((g) => [g.id, g]));
   return (
@@ -23,9 +25,9 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
       <PageHeader
         title="Products"
         description="What your stores sell. Products you add here are managed here; products from a data source such as Zuuvy are managed there — prices, stock and listing all come from it."
-        actions={manages ? <ButtonLink href="/products/new">Add product</ButtonLink> : undefined}
+        actions={manages ? <ButtonLink href={`${base}/products/new`}>Add product</ButtonLink> : undefined}
       />
-      <Tabs tabs={[{ href: "/products", label: "Products", exact: true }, { href: "/products/groups", label: `Variant groups (${groups.length})` }]} />
+      <Tabs tabs={[{ href: `${base}/products`, label: "Products", exact: true }, { href: `${base}/products/groups`, label: `Variant groups (${groups.length})` }]} />
       {!manages && (
         <p className="mb-4 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
           To add products here, set a store's inventory to <strong>Zuuvy Studio</strong> or <strong>None</strong> in its site settings.
@@ -41,7 +43,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
       <ActionForm action={groupSelectedAction}>
       <Card className="overflow-x-auto">
         {products.length === 0 ? (
-          <EmptyState icon="box" title="No products" body={manages ? "Add your first product, or connect a data source." : "Connect Zuuvy and mark products for online sale there."} action={manages ? <ButtonLink href="/products/new">Add product</ButtonLink> : <ButtonLink href="/integrations/zuuvy">Connect Zuuvy</ButtonLink>} />
+          <EmptyState icon="box" title="No products" body={manages ? "Add your first product, or connect a data source." : "Connect Zuuvy and mark products for online sale there."} action={manages ? <ButtonLink href={`${base}/products/new`}>Add product</ButtonLink> : <ButtonLink href={`${base}/integrations/zuuvy`}>Connect Zuuvy</ButtonLink>} />
         ) : (
           <table className="w-full text-sm">
             <thead className="border-b border-slate-100 text-left text-xs text-slate-500">
@@ -71,13 +73,13 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                       )}
                       <div className="min-w-0">
                         {p.source === "native" ? (
-                          <Link href={`/products/${p.id}`} className="truncate font-medium text-slate-900 hover:underline">{p.name}</Link>
+                          <Link href={`${base}/products/${p.id}`} className="truncate font-medium text-slate-900 hover:underline">{p.name}</Link>
                         ) : (
                           <p className="truncate font-medium text-slate-900">{p.name}</p>
                         )}
                         <p className="text-xs text-slate-500">
                           {p.group_id ? (
-                            <Link href={`/products/groups/${p.group_id}`} className="text-brand-700 hover:underline">
+                            <Link href={`${base}/products/groups/${p.group_id}`} className="text-brand-700 hover:underline">
                               {byId.get(p.group_id)?.name}
                               {/* In the group's option order: jsonb does not keep the keys' order. */}
                               {Object.keys(p.options).length > 0 && ` · ${variantLabel(byId.get(p.group_id)?.options ?? [], p.options)}`}

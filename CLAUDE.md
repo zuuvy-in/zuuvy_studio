@@ -14,6 +14,7 @@ npm test             # vitest; platform tests create a throwaway DB per file on 
 npm run typecheck
 npm run admin:create   # platform superadmin (rishav@zuuvy.in by default)
 npm run db:seed:shop   # local: variants, discounts and a cart drawer on the demo store
+npm run db:seed:showcase  # the ten premade sites on the admin's account (SHOWCASE_EMAIL / SUPERADMIN_EMAIL)
 ```
 
 ## Things that will bite you
@@ -88,3 +89,19 @@ npm run db:seed:shop   # local: variants, discounts and a cart drawer on the dem
 - **Section looks live in `section.style`, not props** — the runtime's
   `.zs-block` wrapper applies them. Scroll animations must finish by
   `entry 100%`, or content near the page's top or bottom is left half-drawn.
+- **Pictures are never generated** unless `ZSITE_IMAGE_GENERATION=1`. Icons8
+  links expire: the AI re-hosts through `save_image` (hosts from
+  `ZSITE_IMPORT_HOSTS`, SVG through `safeSvg`).
+- **Text props refuse HTML.** Tables and forms are blocks; a form's answers go
+  to a URL or a site table. The AI never deletes a table — it proposes, the
+  owner deletes (version page or Data tab).
+- **Nothing is published before the email is confirmed** (`canPublish`), the
+  starter page included. Platform-made accounts pass `emailVerified: true`.
+- **Store rows belong to a site** (`site_id`; null = every store). New code
+  that lists or sells products, discounts or plugins must take the site.
+- **Pages under `/sites/[siteId]/…` that mirror a root page are re-exports**;
+  the page reads its scope from `params.siteId` and forms carry `_scope`.
+- **Read `tree.commerce` through `commerceOf`** (runtime) or parse it — stored
+  trees predate newer settings.
+- **Premade sites cross tenants only through the showcase functions** in
+  migration 0008; never widen a grant for them.

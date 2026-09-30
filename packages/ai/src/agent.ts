@@ -23,6 +23,8 @@ import { type Proposal, type TableOpSpec, type ToolCapabilities, createSiteTools
 export type SiteContext = {
   businessName: string;
   siteKind: "landing" | "portfolio" | "store";
+  /** Visitors can sign in here (always true for a store). */
+  accounts?: boolean;
   /** Categories in the connected catalogue, for product grids. */
   categories: { category: string; count: number }[];
   productCount: number;
@@ -96,7 +98,7 @@ How a site is built:
 - Images must be https URLs, and never invented. Sources, in order: the owner's own pictures (the media library listed with the request) for their products, premises and people; real photography from design__search_photos (Unsplash — use each URL exactly as given and credit the photographer); illustrations and icons from the Icons8 tools when they are listed (save illustrations with save_image first — their links expire); generate_image only if it is listed. Follow the imagery skill: photos for real things, illustrations for ideas and empty states, never both styles mixed in one row. If no source fits, leave the image field out and the site shows a tasteful placeholder. A failed picture is never a reason to change nothing.
 - Portfolio sites keep structured content in data collections (profile, projects, experience, education, skills, services, testimonials, awards, publications, clients, gallery), not in section props; a "collection" section shows one of them. Only use collections when the request's facts say "Data collections: available". Portfolios should be built this way: put the facts in the data, then show them with collection sections. Use the data tools (view_data, add_entry, update_entry, remove_entry, move_entry).
 - The owner's data is theirs. Adding entries and filling empty fields is fine. Changing a value that is already there, removing an entry, or replacing the profile is held for the owner's permission automatically — do not try to get round it; say in your summary what you proposed. Never invent facts for the data (employers, clients, dates, awards, quotes); use what the owner gave you, attached files included.
-- A store's cart, checkout and customer account are part of the design: decide them with set_commerce (cart drawer or page, where the cart and account links sit, which buy buttons, checkout layout and wording). When you build or restyle a store, set them to suit it. Cart, checkout and account pages are drawn by the platform from these settings — never build them as sections.
+- A store's cart, checkout and customer account — and the account of any site with sign-in — are part of the design: decide them with set_commerce (where the cart and account sit and how they are drawn — icon, word, button or pill, matched to the header; which buy buttons; checkout layout; and the sign-in, account, cart and thank-you pages' layout, frame and wording in the site's voice). When you build or restyle such a site, set them to suit it. Those pages are drawn by the platform from these settings — never build them as sections. A site that sells nothing has no cart: never add cart, basket or checkout links to it.
 - Forms (contact, enquiry, booking, quote, sign-up) are form blocks. To keep the answers, create_table first (one column per field, same keys) and point the form's destination at it; to hand the visitor to another page (a sign-up or booking system), use destination url and the answers go as URL parameters. Tabular content (prices, timings, specs, comparisons) is a table block. Never write HTML or markdown into any text.
 - Motion is a theme setting (set_theme motion: none, subtle or lively). Use it when the request asks for animation or a livelier feel.
 - When the request names a website as a reference and fetch_reference is available, look at it first, then build in that spirit for this business: its structure, tone and palette, never its words, images or name.
@@ -168,7 +170,7 @@ export function describeRequest(
   const ctx = { ...opts.context, iconPack: opts.tree.theme.iconPack, illustrationStyle: opts.tree.theme.illustrationStyle };
   const facts = [
     `Business: ${ctx.businessName}`,
-    `Kind of site: ${ctx.siteKind}`,
+    `Kind of site: ${ctx.siteKind}${ctx.siteKind === "store" ? " (cart, checkout and customer accounts)" : ctx.accounts ? " (customer accounts on; no cart — it sells nothing)" : " (no cart, no accounts)"}`,
     ctx.catalogueSource
       ? `Catalogue: ${ctx.productCount} products from ${ctx.catalogueSource}. Categories: ${
           ctx.categories.map((c) => `${c.category} (${c.count})`).join(", ") || "none"
@@ -232,7 +234,7 @@ export async function editSite(opts: EditOptions): Promise<EditResult> {
   const fallback = opts.fallbackModel ?? (model !== DEFAULT_MODELS[provider] ? DEFAULT_MODELS[provider] : "");
   const run = opts.runner ?? (provider === "anthropic" ? anthropicProvider() : bedrockProvider(opts.bedrock));
   const dataTools = usesDataTools(opts.tree, opts.context.siteKind);
-  const commerceTools = opts.context.siteKind === "store";
+  const commerceTools = opts.context.siteKind === "store" ? "store" : opts.context.accounts ? "accounts" : false;
   const { tools: siteTools, state } = createSiteTools(opts.tree, { ...opts.capabilities, dataTools, commerceTools }, opts.data ?? {});
   // Runners supplied by tests get no MCP unless they ask for it.
   const mcp: McpConnection | null = opts.mcp === false || (opts.mcp === undefined && opts.runner) ? null : await connectMcp(opts.mcp || {});

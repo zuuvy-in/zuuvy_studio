@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ActionForm, CopyField, SubmitButton } from "@/components/forms";
 import { Badge, Card, CardHeader, Dl, EmptyState, Icon, PageHeader } from "@/components/ui";
 import { ago, dateTime } from "@/lib/format";
+import { pageScope } from "@/lib/scope";
 import { requireSession } from "@/lib/session";
 import { connectAction, disconnectAction, rotateAction, syncAction, testAction } from "../actions";
 
@@ -15,11 +16,12 @@ const CAPABILITY: Record<string, string> = {
   payments: "Takes payments",
 };
 
-export default async function IntegrationPage({ params }: { params: Promise<{ kind: string }> }) {
+export default async function IntegrationPage({ params }: { params: Promise<{ kind: string; siteId?: string }> }) {
   const { kind } = await params;
   const connector = CONNECTORS.find((c) => c.kind === kind);
   if (!connector || connector.availability !== "available") notFound();
   const session = await requireSession();
+  const { siteId, base } = await pageScope(params);
   const { row, events } = await withTenant(session.tenant.id, async (tx) => {
     const row = await getIntegration(tx, kind);
     return { row, events: row ? await listEvents(tx, row.id, 60) : [] };

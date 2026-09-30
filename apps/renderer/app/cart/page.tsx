@@ -1,5 +1,5 @@
 import { quoteCart } from "@zsite/platform";
-import { Placeholder, SiteShell } from "@zsite/runtime";
+import { Placeholder, SiteShell, SystemFrame, commerceOf } from "@zsite/runtime";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { chromeContext, currentCustomer, isStore, readCart, readCode } from "@/lib/shop";
@@ -16,14 +16,16 @@ export default async function CartPage() {
   if (!current || !isStore(current)) notFound();
   const [items, code, customer, ctx] = await Promise.all([readCart(), readCode(), currentCustomer(current), chromeContext(current)]);
   const quote = await quoteCart(current.resolved, items, { code, customerId: customer?.id, plugins: true });
+  const pages = commerceOf(current.site.tree).pages;
+  const more = pages.cart.continueLabel ?? "Continue shopping";
   return (
     <SiteShell tree={current.site.tree} ctx={ctx}>
-      <div className="zs-container zs-page">
-        <h1 style={{ fontSize: "clamp(1.8rem, 4vw, 2.4rem)" }}>Your cart</h1>
+      <SystemFrame pages={pages} wide>
+        <h1 style={{ fontSize: "clamp(1.8rem, 4vw, 2.4rem)" }}>{pages.cart.heading ?? "Your cart"}</h1>
         {!quote.lines.length ? (
           <div className="zs-card" style={{ marginTop: 24 }}>
-            <p>Your cart is empty.</p>
-            <a href="/" className="zs-btn zs-btn-primary">Continue shopping</a>
+            <p>{pages.cart.empty ?? "Your cart is empty."}</p>
+            <a href="/" className="zs-btn zs-btn-primary">{more}</a>
           </div>
         ) : (
           <div className="zs-checkout" data-summary="side" style={{ marginTop: 24 }}>
@@ -51,11 +53,11 @@ export default async function CartPage() {
               ) : (
                 <p className="zs-alert">Change or remove the items marked above to check out.</p>
               )}
-              <a href="/" className="zs-btn zs-btn-ghost">Continue shopping</a>
+              <a href="/" className="zs-btn zs-btn-ghost">{more}</a>
             </div>
           </div>
         )}
-      </div>
+      </SystemFrame>
     </SiteShell>
   );
 }

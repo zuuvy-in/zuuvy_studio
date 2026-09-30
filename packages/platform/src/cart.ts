@@ -159,7 +159,7 @@ export async function quoteCart(r: ResolvedSite, items: CartItem[], opts: QuoteO
       .filter((l): l is QuoteLine => l !== null);
     const buyer = opts.customerId || opts.phone ? await buyerHistory(tx, { customerId: opts.customerId, phone: opts.phone }) : null;
     const sellable = lines.filter((l) => !l.problem);
-    const priced = applyDiscounts(await liveDiscounts(tx), sellable, { code: opts.code, buyer });
+    const priced = applyDiscounts(await liveDiscounts(tx, r.siteId), sellable, { code: opts.code, buyer });
     return { lines, sellable, priced };
   });
 
@@ -173,8 +173,8 @@ export async function quoteCart(r: ResolvedSite, items: CartItem[], opts: QuoteO
     },
     customer: opts.customerId ? { id: opts.customerId } : null,
   };
-  const hooks = opts.plugins && base.sellable.length ? await calculateHooks(r.tenantId, payload, subtotal) : { adjustments: [], messages: [] };
-  const fields = opts.fields && base.sellable.length ? await checkoutFields(r.tenantId, payload) : [];
+  const hooks = opts.plugins && base.sellable.length ? await calculateHooks(r.tenantId, payload, subtotal, r.siteId) : { adjustments: [], messages: [] };
+  const fields = opts.fields && base.sellable.length ? await checkoutFields(r.tenantId, payload, r.siteId) : [];
   const total = Math.max(0, paise(subtotal) - paise(base.priced.total) + hooks.adjustments.reduce((n, a) => n + paise(a.amount), 0)) / 100;
   return {
     lines: base.lines,
@@ -214,7 +214,7 @@ export async function checkout(r: ResolvedSite, input: CheckoutInput): Promise<{
     cart: { lines: quote.lines, subtotal: quote.subtotal, discount: quote.discount, total: quote.total },
     customer: { name: input.customer.name, phone, address: input.customer.address },
     extra,
-  });
+  }, r.siteId);
   if (refusal) throw new UserError(refusal);
   return placeOrder(r.tenantId, {
     siteId: r.siteId,

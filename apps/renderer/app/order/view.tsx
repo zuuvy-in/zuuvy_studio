@@ -1,3 +1,4 @@
+import type { SystemPages } from "@zsite/core";
 import type { PublicOrder } from "@zsite/platform";
 
 export const STATUS_LABEL: Record<string, string> = {
@@ -23,16 +24,17 @@ export const SHORT_STATUS: Record<string, string> = {
 const inr = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
 
 /** One order: where it has got to, and what was in it. The same view for a guest's link and an account. */
-export function OrderView({ order }: { order: PublicOrder }) {
+export function OrderView({ order, thanks }: { order: PublicOrder; thanks?: SystemPages["thanks"] }) {
+  const first = order.customerName.split(" ")[0]!;
   return (
     <>
       <p className="zs-eyebrow">Order WEB-{order.number}</p>
       <h1 style={{ fontSize: "clamp(1.8rem, 4vw, 2.4rem)" }}>
-        {order.status === "pending" ? `Thank you, ${order.customerName.split(" ")[0]}!` : STATUS_LABEL[order.status]}
+        {order.status === "pending" ? (thanks?.heading ?? "Thank you, {name}!").replace(/\{name\}/g, first) : STATUS_LABEL[order.status]}
       </h1>
       <p className="zs-lede">
         {order.status === "pending"
-          ? "Your order is with the shop. They will confirm it shortly — keep this page to follow it."
+          ? (thanks?.message ?? "Your order is with the shop. They will confirm it shortly — keep this page to follow it.")
           : "Keep this page to follow your order."}
       </p>
       <ol className="zs-steps">

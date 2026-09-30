@@ -2,13 +2,13 @@ import Link from "next/link";
 import { StudioMark } from "@/components/logo";
 import { SidebarNav } from "@/components/nav";
 import { Icon } from "@/components/ui";
-import { emailVerified, hasStore, isPlatformAdmin, withTenant } from "@zsite/platform";
+import { emailVerified, isPlatformAdmin, siteCounts, withTenant } from "@zsite/platform";
 import { VerifyBanner } from "./verify-banner";
 import { requireSession } from "@/lib/session";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
-  const commerce = await withTenant(session.tenant.id, hasStore);
+  const counts = await withTenant(session.tenant.id, siteCounts);
   const admin = await isPlatformAdmin(session.user.id);
   const verified = await emailVerified(session.user.id);
   return (
@@ -24,7 +24,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </div>
         </div>
         <div className="px-3 pb-3 md:flex-1">
-          <SidebarNav commerce={commerce} admin={admin} />
+          <SidebarNav stores={counts.stores} accounts={counts.accounts} admin={admin} />
         </div>
         <div className="hidden border-t border-slate-200 px-4 py-3 md:block">
           <p className="truncate text-sm font-medium text-slate-800">{session.user.name}</p>

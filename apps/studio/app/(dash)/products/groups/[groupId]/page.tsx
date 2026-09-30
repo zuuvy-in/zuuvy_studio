@@ -3,18 +3,20 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Badge, Card, CardHeader, PageHeader } from "@/components/ui";
+import { pageScope } from "@/lib/scope";
 import { requireSession } from "@/lib/session";
 import { addProductsAction, deleteGroupAction, generateAction, saveVariantsAction, updateGroupAction } from "../actions";
 import { GroupFields } from "../fields";
 
 export const metadata = { title: "Variant group" };
 
-export default async function GroupPage({ params }: { params: Promise<{ groupId: string }> }) {
+export default async function GroupPage({ params }: { params: Promise<{ groupId: string; siteId?: string }> }) {
   const { groupId } = await params;
   const session = await requireSession();
+  const { siteId, base } = await pageScope(params);
   const { group, others } = await withTenant(session.tenant.id, async (tx) => ({
     group: await getGroup(tx, groupId),
-    others: (await listProducts(tx, { includeHidden: true })).filter((p) => p.group_id === null),
+    others: (await listProducts(tx, { includeHidden: true, siteId })).filter((p) => p.group_id === null),
   })).catch((e) => {
     if (e instanceof NotFound || (e as Error).message === "That group does not exist.") notFound();
     throw e;
@@ -25,7 +27,7 @@ export default async function GroupPage({ params }: { params: Promise<{ groupId:
   return (
     <>
       <PageHeader
-        eyebrow={<Link href="/products/groups" className="hover:underline">Variant groups</Link>}
+        eyebrow={<Link href={`${base}/products/groups`} className="hover:underline">Variant groups</Link>}
         title={group.name}
         description={`${group.variants.length} variants of ${combos} possible combinations${group.variants.length > complete ? ` · ${group.variants.length - complete} still need their options set` : ""}.`}
       />
@@ -61,7 +63,7 @@ export default async function GroupPage({ params }: { params: Promise<{ groupId:
                             <div className="h-8 w-8 rounded bg-slate-100" />
                           )}
                           {v.source === "native" ? (
-                            <Link href={`/products/${v.id}`} className="font-medium text-slate-900 hover:underline">{v.name}</Link>
+                            <Link href={`${base}/products/${v.id}`} className="font-medium text-slate-900 hover:underline">{v.name}</Link>
                           ) : (
                             <span className="font-medium text-slate-900">{v.name} <Badge tone="brand">Zuuvy</Badge></span>
                           )}

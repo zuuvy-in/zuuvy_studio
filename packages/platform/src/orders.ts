@@ -145,7 +145,7 @@ export async function placeOrder(tenantId: string, input: PlaceOrderInput): Prom
     let subtotal = 0;
     for (const l of wanted) {
       const p = products.get(l.productId);
-      if (!p || !p.active || p.price === null || (allowed && !allowed.includes(p.source))) {
+      if (!p || !p.active || p.price === null || (allowed && !allowed.includes(p.source)) || (p.site_id && p.site_id !== input.siteId)) {
         throw new UserError("One of the products is no longer available.");
       }
       if (counted && !p.in_stock) throw new UserError(`${p.name} is out of stock.`);
@@ -181,7 +181,7 @@ export async function placeOrder(tenantId: string, input: PlaceOrderInput): Prom
     const customerId = input.customerId && isUuid(input.customerId) ? input.customerId : null;
     const buyer = await buyerHistory(tx, { customerId, phone });
     const priced = applyDiscounts(
-      await liveDiscounts(tx),
+      await liveDiscounts(tx, input.siteId ?? null),
       lines.map((l) => ({
         productId: l.productId,
         groupId: products.get(l.productId)?.group_id ?? null,
@@ -216,7 +216,7 @@ export async function placeOrder(tenantId: string, input: PlaceOrderInput): Prom
         input.note?.trim().slice(0, 500) || null, linked ? "pending" : "not_linked"],
     );
     await redeemDiscounts(tx, order.id, priced.applied, { customerId, phone });
-    for (const pluginId of await orderPlacedPlugins(tx)) await enqueue(tx, "plugin.notify", { pluginId, orderId: order.id });
+    for (const pluginId of await orderPlacedPlugins(tx, input.siteId ?? null)) await enqueue(tx, "plugin.notify", { pluginId, orderId: order.id });
     await addOrderEvent(tx, order.id, "pending", "Order placed — cash on delivery", "storefront");
     // Alerts go in the same transaction: no order without its alert, no alert for an order that rolled back.
     const alerts = await getAlerts(tx);
@@ -248,15 +248,22 @@ export async function addOrderEvent(tx: Tx, orderId: string, status: string, not
   );
 }
 
-export async function listOrders(tx: Tx, opts: { status?: string; limit?: number } = {}): Promise<Order[]> {
+export async function listOrders(tx: Tx, opts: { status?: string; limit?: number; siteId?: string } = {}): Promise<Order[]> {
   const params: unknown[] = [];
-  let where = "";
+  const where: string[] = [];
   if (opts.status) {
     params.push(opts.status);
-    where = `where status = $1`;
+    where.push(`status = $${params.length}`);
+  }
+  if (opts.siteId) {
+    params.push(opts.siteId);
+    where.push(`site_id = $${params.length}`);
   }
   params.push(opts.limit ?? 100);
-  return tx.query<Order>(`select ${ORDER_COLUMNS} from orders ${where} order by created_at desc limit $${params.length}`, params);
+  return tx.query<Order>(
+    `select ${ORDER_COLUMNS} from orders ${where.length ? `where ${where.join(" and ")}` : ""} order by created_at desc limit $${params.length}`,
+    params,
+  );
 }
 
 export async function getOrder(tx: Tx, orderId: string): Promise<Order & { events: OrderEvent[] }> {

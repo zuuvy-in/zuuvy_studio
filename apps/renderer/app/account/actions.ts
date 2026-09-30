@@ -12,7 +12,7 @@ import {
 } from "@zsite/platform";
 import { cookies } from "next/headers";
 import { redirect, unstable_rethrow } from "next/navigation";
-import { CUSTOMER_COOKIE, currentCustomer, customerToken, setCustomerCookie } from "@/lib/shop";
+import { CUSTOMER_COOKIE, currentCustomer, customerToken, hasAccounts, setCustomerCookie } from "@/lib/shop";
 import { currentSite } from "@/lib/site";
 
 export type AccountState = { error?: string; ok?: string } | null;
@@ -31,7 +31,7 @@ async function guard(fn: () => Promise<AccountState | void>): Promise<AccountSta
 
 export async function signInAction(_: AccountState, form: FormData): Promise<AccountState> {
   const current = await currentSite();
-  if (!current) return { error: "This store is not available." };
+  if (!current || !hasAccounts(current)) return { error: "Accounts are not available on this site." };
   return guard(async () => {
     const { customerId } = await signInCustomer(current.resolved.tenantId, text(form, "email"), String(form.get("password") ?? ""));
     const s = await createCustomerSession(current.resolved.tenantId, customerId);
@@ -42,13 +42,14 @@ export async function signInAction(_: AccountState, form: FormData): Promise<Acc
 
 export async function signUpAction(_: AccountState, form: FormData): Promise<AccountState> {
   const current = await currentSite();
-  if (!current) return { error: "This store is not available." };
+  if (!current || !hasAccounts(current)) return { error: "Accounts are not available on this site." };
   return guard(async () => {
     const { customerId } = await signUpCustomer(current.resolved.tenantId, {
       name: text(form, "name"),
       email: text(form, "email"),
       phone: text(form, "phone"),
       password: String(form.get("password") ?? ""),
+      siteId: current.resolved.siteId,
     });
     const s = await createCustomerSession(current.resolved.tenantId, customerId);
     await setCustomerCookie(s.token, s.expires);

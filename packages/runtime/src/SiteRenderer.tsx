@@ -3,7 +3,7 @@
  * app uses it for live sites; the studio uses the same component for
  * previews, so what the owner reviews is exactly what customers will get.
  */
-import { type Commerce, DEFAULT_COMMERCE, type SiteTree } from "@zsite/core";
+import { Commerce, DEFAULT_COMMERCE, type SiteTree } from "@zsite/core";
 import type { ReactNode } from "react";
 import { blockSwitch } from "./blocks";
 import type { RenderContext } from "./context";
@@ -33,32 +33,55 @@ export function CommerceIcon({ name }: { name: keyof typeof ICONS }) {
 
 /** The store's commerce settings, defaults filled in. */
 export function commerceOf(tree: SiteTree): Commerce {
-  return tree.commerce ?? DEFAULT_COMMERCE;
+  // Trees are stored as they were written; settings added since then take their defaults here.
+  if (!tree.commerce) return DEFAULT_COMMERCE;
+  const parsed = Commerce.safeParse(tree.commerce);
+  return parsed.success ? parsed.data : DEFAULT_COMMERCE;
 }
+
+/** Which parts of a header item a display draws. */
+const DRAWS: Record<Commerce["cart"]["display"], { icon: boolean; word: boolean }> = {
+  icon: { icon: true, word: false },
+  icon_label: { icon: true, word: true },
+  label: { icon: false, word: true },
+  button: { icon: true, word: true },
+  pill: { icon: true, word: true },
+};
 
 function CartLink({ c, ctx, floating }: { c: Commerce; ctx: RenderContext; floating?: boolean }) {
   const count = ctx.shop?.cartCount ?? 0;
   const href = c.cart.style === "drawer" && ctx.shop?.drawer ? "#cart" : ctx.href("/cart");
+  const word = c.cart.label ?? "Cart";
+  const draws = floating ? { icon: true, word: false } : DRAWS[c.cart.display];
   return (
-    <a href={href} className={floating ? "zs-cart-float" : "zs-cart-link"} aria-label={`${c.cart.label ?? "Cart"}${count ? `, ${count} items` : ""}`}>
-      <CommerceIcon name={c.cart.icon} />
-      {c.cart.label && !floating && <span>{c.cart.label}</span>}
+    <a
+      href={href}
+      className={floating ? "zs-cart-float" : `zs-cart-link zs-navitem zs-navitem-${c.cart.display}`}
+      aria-label={`${word}${count ? `, ${count} items` : ""}`}
+    >
+      {draws.icon && <CommerceIcon name={c.cart.icon} />}
+      {draws.word && <span className="zs-navitem-word">{word}</span>}
       {count > 0 && <span className="zs-cart-count">{count}</span>}
     </a>
   );
 }
 
 function AccountLink({ c, ctx }: { c: Commerce; ctx: RenderContext }) {
+  const draws = DRAWS[c.account.display];
+  const word = ctx.shop?.signedIn ? `Hi, ${ctx.shop.signedIn}` : c.account.label;
   return (
-    <a href={ctx.href("/account")} className="zs-account-link">
-      <CommerceIcon name="user" />
-      <span>{ctx.shop?.signedIn ? `Hi, ${ctx.shop.signedIn}` : c.account.label}</span>
+    <a href={ctx.href("/account")} className={`zs-account-link zs-navitem zs-navitem-${c.account.display}`} aria-label={draws.word ? undefined : word}>
+      {draws.icon && <CommerceIcon name="user" />}
+      {draws.word && <span className="zs-navitem-word">{word}</span>}
     </a>
   );
 }
 
 export function SiteShell({ tree, ctx, children }: { tree: SiteTree; ctx: RenderContext; children: ReactNode }) {
   const shop = ctx.shop ? commerceOf(tree) : null;
+  // The cart belongs to stores; accounts to any site that has them switched on.
+  const cart = shop && ctx.shop?.cart ? shop : null;
+  const account = shop && ctx.shop?.accounts && shop.account.show ? shop : null;
   return (
     <div className="zs-site" style={themeStyle(tree.theme)} data-runtime={RUNTIME_VERSION} data-motion={tree.theme.motion ?? "subtle"}>
       {/* React hoists stylesheet links with a precedence into <head>. */}
@@ -76,10 +99,10 @@ export function SiteShell({ tree, ctx, children }: { tree: SiteTree; ctx: Render
               </a>
             ))}
           </nav>
-          {(tree.nav.cta || shop) && (
+          {(tree.nav.cta || (account && account.account.placement === "nav") || (cart && cart.cart.placement === "nav")) && (
             <div className="zs-nav-actions">
-              {shop?.account.show && shop.account.placement === "nav" && <AccountLink c={shop} ctx={ctx} />}
-              {shop && shop.cart.placement === "nav" && <CartLink c={shop} ctx={ctx} />}
+              {account && account.account.placement === "nav" && <AccountLink c={account} ctx={ctx} />}
+              {cart && cart.cart.placement === "nav" && <CartLink c={cart} ctx={ctx} />}
               {tree.nav.cta && (
                 <a href={ctx.href(tree.nav.cta.href)} className="zs-btn zs-btn-primary zs-btn-sm">
                   {tree.nav.cta.label}
@@ -90,13 +113,13 @@ export function SiteShell({ tree, ctx, children }: { tree: SiteTree; ctx: Render
         </div>
       </header>
       <main>{children}</main>
-      {shop && shop.cart.placement === "floating" && <CartLink c={shop} ctx={ctx} floating />}
-      {shop && shop.cart.style === "drawer" && ctx.shop?.drawer && (
+      {cart && cart.cart.placement === "floating" && <CartLink c={cart} ctx={ctx} floating />}
+      {cart && cart.cart.style === "drawer" && ctx.shop?.drawer && (
         <div id="cart" className="zs-drawer" role="dialog" aria-label="Your cart" data-open={ctx.shop.drawerOpen ? "" : undefined}>
           <a href={ctx.shop.closeHref ?? "#"} className="zs-drawer-backdrop" aria-label="Close cart" />
           <div className="zs-drawer-panel">
             <div className="zs-drawer-head">
-              <strong>{shop.cart.label ?? "Your cart"}</strong>
+              <strong>{cart.pages.cart.heading ?? cart.cart.label ?? "Your cart"}</strong>
               <a href={ctx.shop.closeHref ?? "#"} aria-label="Close cart" className="zs-drawer-close">×</a>
             </div>
             {ctx.shop.drawer}
@@ -106,15 +129,15 @@ export function SiteShell({ tree, ctx, children }: { tree: SiteTree; ctx: Render
       <footer className="zs-footer">
         <div className="zs-container zs-footer-inner">
           <p>{tree.footer.text}</p>
-          {(tree.footer.links.length > 0 || (shop?.account.show && shop.account.placement === "footer")) && (
+          {(tree.footer.links.length > 0 || account?.account.placement === "footer") && (
             <nav aria-label="Footer">
               {tree.footer.links.map((l, i) => (
                 <a key={i} href={ctx.href(l.href)}>
                   {l.label}
                 </a>
               ))}
-              {shop?.account.show && shop.account.placement === "footer" && (
-                <a href={ctx.href("/account")}>{ctx.shop?.signedIn ? `${shop.account.label} (${ctx.shop.signedIn})` : shop.account.label}</a>
+              {account?.account.placement === "footer" && (
+                <a href={ctx.href("/account")}>{ctx.shop?.signedIn ? `${account.account.label} (${ctx.shop.signedIn})` : account.account.label}</a>
               )}
             </nav>
           )}

@@ -1,6 +1,7 @@
 import { NotFound, getSite, isUuid, latestVersion, withTenant } from "@zsite/platform";
 import { notFound } from "next/navigation";
 import { Tabs } from "@/components/nav";
+import { ScopeProvider } from "@/components/scope";
 import { Badge, ButtonLink, Icon } from "@/components/ui";
 import { requireSession } from "@/lib/session";
 
@@ -36,11 +37,26 @@ export default async function SiteLayout({ children, params }: { children: React
           { href: `/sites/${site.id}/versions`, label: "Versions" },
           // Portfolio content is for portfolios (and a site that still shows it after a type change).
           ...(site.kind === "portfolio" || usesCollections ? [{ href: `/sites/${site.id}/content`, label: "Portfolio content" }] : []),
-          { href: `/sites/${site.id}/forms`, label: "Forms" },
+          { href: `/sites/${site.id}/data`, label: "Data" },
+          // A store's own selling, kept with the store; the top-level pages add them up across stores.
+          ...(site.kind === "store"
+            ? [
+                { href: `/sites/${site.id}/products`, label: "Products" },
+                { href: `/sites/${site.id}/orders`, label: "Orders" },
+                { href: `/sites/${site.id}/discounts`, label: "Discounts" },
+              ]
+            : []),
+          ...(site.accounts || site.kind === "store" ? [{ href: `/sites/${site.id}/customers`, label: "Customers" }] : []),
+          ...(site.kind === "store"
+            ? [
+                { href: `/sites/${site.id}/plugins`, label: "Plugins" },
+                { href: `/sites/${site.id}/integrations`, label: "Integrations" },
+              ]
+            : []),
           { href: `/sites/${site.id}/settings`, label: "Settings" },
         ]}
       />
-      {children}
+      <ScopeProvider siteId={site.id}>{children}</ScopeProvider>
     </>
   );
 }

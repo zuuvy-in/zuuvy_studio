@@ -21,6 +21,10 @@ export type ProductView = {
 
 /** A store's live state for the header: the cart and who is signed in. */
 export type ShopContext = {
+  /** A cart and checkout: stores only. A site that sells nothing never shows one. */
+  cart: boolean;
+  /** Visitors can sign in (the site's own setting; stores have it on). */
+  accounts: boolean;
   cartCount: number;
   /** First name of the signed-in customer; null when nobody is. */
   signedIn: string | null;
@@ -43,7 +47,7 @@ export type RenderContext = {
   productHref?: (productId: string) => string;
   /** Where a variant group's card goes. */
   groupHref?: (groupId: string) => string;
-  /** A store: cart and account in the header. Absent on sites that do not sell. */
+  /** A store's cart, and/or a site's customer accounts, in the header. Absent when the site has neither. */
   shop?: ShopContext;
   /** A quick "add to cart" control under a product card, when the store offers one. */
   cardAction?: (product: ProductView) => ReactNode;

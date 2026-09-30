@@ -3,6 +3,7 @@
 import { type ReactNode, useActionState, useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import type { ActionState } from "@/lib/actions";
+import { ScopeField } from "./scope";
 import { type ButtonVariant, buttonClass, cx } from "./ui";
 
 export function SubmitButton({
@@ -70,6 +71,7 @@ export function ActionForm({
   }, [state, resetOnOk]);
   return (
     <form ref={ref} action={formAction} className={className}>
+      <ScopeField />
       {children}
       <Message state={state} />
     </form>

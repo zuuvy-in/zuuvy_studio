@@ -1,12 +1,14 @@
 import { NotFound, UserError, getProduct, withTenant } from "@zsite/platform";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui";
+import { pageScope } from "@/lib/scope";
 import { requireSession } from "@/lib/session";
 import { ProductForm } from "../form";
 
-export default async function EditProductPage({ params }: { params: Promise<{ productId: string }> }) {
+export default async function EditProductPage({ params }: { params: Promise<{ productId: string; siteId?: string }> }) {
   const { productId } = await params;
   const session = await requireSession();
+  const { siteId, base } = await pageScope(params);
   const product = await withTenant(session.tenant.id, (tx) => getProduct(tx, productId)).catch((e) => {
     if (e instanceof NotFound || e instanceof UserError) notFound();
     throw e;

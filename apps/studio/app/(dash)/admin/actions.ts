@@ -1,6 +1,6 @@
 "use server";
 
-import { addPlatformAdmin, removePlatformAdmin } from "@zsite/platform";
+import { addPlatformAdmin, removePlatformAdmin, removeShowcase, setShowcase } from "@zsite/platform";
 import { revalidatePath } from "next/cache";
 import { type ActionState, attempt } from "@/lib/actions";
 import { requirePlatformAdmin } from "@/lib/session";
@@ -27,5 +27,34 @@ export async function removeAdminAction(_: ActionState, form: FormData): Promise
     await removePlatformAdmin(session.user.id, text(form, "userId"));
     revalidatePath("/admin/admins");
     return { ok: "Removed. Their account and businesses are untouched." };
+  });
+}
+
+export async function saveShowcaseAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const session = await requirePlatformAdmin();
+  return attempt(async () => {
+    await setShowcase(session.user.id, {
+      siteId: text(form, "siteId"),
+      slug: text(form, "slug"),
+      title: text(form, "title"),
+      category: text(form, "category"),
+      description: text(form, "description"),
+      coverUrl: text(form, "cover") || null,
+      sort: Number(text(form, "sort")) || 0,
+      active: form.get("active") === "1",
+      sampleBusiness: text(form, "sample"),
+    });
+    revalidatePath("/admin/templates");
+    revalidatePath("/sites/new");
+    return { ok: "Saved." };
+  });
+}
+
+export async function removeShowcaseAction(_: ActionState, form: FormData): Promise<ActionState> {
+  const session = await requirePlatformAdmin();
+  return attempt(async () => {
+    await removeShowcase(session.user.id, text(form, "id"));
+    revalidatePath("/admin/templates");
+    return { ok: "No longer offered. The site itself is untouched." };
   });
 }

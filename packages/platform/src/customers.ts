@@ -41,7 +41,7 @@ function cleanEmail(raw: string): string {
 
 export async function signUpCustomer(
   tenantId: string,
-  input: { name: string; email: string; password: string; phone?: string },
+  input: { name: string; email: string; password: string; phone?: string; siteId?: string },
 ): Promise<{ customerId: string }> {
   const name = input.name.trim().slice(0, 100);
   if (!name) throw new UserError("Please enter your name.");
@@ -53,8 +53,8 @@ export async function signUpCustomer(
   try {
     const row = await withTenant(tenantId, (tx) =>
       tx.get<{ id: string }>(
-        "insert into customers (tenant_id, email, name, phone, password_hash) values (app_tenant(), $1, $2, $3, $4) returning id",
-        [email, name, phone, hash],
+        "insert into customers (tenant_id, email, name, phone, password_hash, site_id) values (app_tenant(), $1, $2, $3, $4, $5) returning id",
+        [email, name, phone, hash, input.siteId ?? null],
       ),
     );
     return { customerId: row.id };
@@ -154,14 +154,22 @@ export async function customerOrder(tenantId: string, customerId: string, number
   });
 }
 
-/** The business's customers, with what they have ordered. */
-export async function listCustomers(tx: Tx): Promise<(CustomerAccount & { orders: number; spent: number; last_order_at: Date | null })[]> {
+/**
+ * The business's customers, with what they have ordered. With a site: those
+ * who signed up there or ordered there, and their orders on that site only.
+ */
+export async function listCustomers(
+  tx: Tx,
+  siteId?: string,
+): Promise<(CustomerAccount & { orders: number; spent: number; last_order_at: Date | null; site_id: string | null })[]> {
   return tx.query(
-    `select c.id, c.email, c.name, c.phone, c.address, c.created_at,
+    `select c.id, c.email, c.name, c.phone, c.address, c.created_at, c.site_id,
             count(o.id)::int as orders, coalesce(sum(o.total) filter (where o.status not in ('rejected', 'cancelled')), 0)::float8 as spent,
             max(o.created_at) as last_order_at
-       from customers c left join orders o on o.customer_id = c.id
+       from customers c left join orders o on o.customer_id = c.id ${siteId ? "and o.site_id = $1" : ""}
+      ${siteId ? "where c.site_id = $1 or exists (select 1 from orders x where x.customer_id = c.id and x.site_id = $1)" : ""}
       group by c.id order by c.created_at desc limit 500`,
+    siteId ? [siteId] : [],
   );
 }
 

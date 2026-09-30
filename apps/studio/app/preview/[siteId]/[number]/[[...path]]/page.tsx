@@ -3,6 +3,7 @@ import { SitePage, linkRewriter } from "@zsite/runtime";
 import "@zsite/runtime/styles.css";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { FeedbackBridge } from "@/components/feedback-bridge";
 import { requireSession } from "@/lib/session";
 
 export const metadata: Metadata = { robots: { index: false } };
@@ -19,13 +20,15 @@ export default async function PreviewPage({ params }: { params: Promise<{ siteId
     const v = await getVersionByNumber(tx, siteId, Number(number));
     if (!v.tree) throw new NotFound("version");
     const site = await getSite(tx, siteId);
-    return { tree: v.tree, data: v.data, products: await productsForTree(tx, v.tree, siteId), store: site.kind === "store" };
+    return { tree: v.tree, data: v.data, products: await productsForTree(tx, v.tree, siteId), store: site.kind === "store", accounts: site.accounts };
   }).catch((e) => {
     if (e instanceof NotFound) notFound();
     throw e;
   });
   const base = `/preview/${siteId}/${number}`;
   return (
+    <>
+    <FeedbackBridge base={base} />
     <SitePage
       tree={data.tree}
       path={(path ?? []).join("/")}
@@ -48,16 +51,20 @@ export default async function PreviewPage({ params }: { params: Promise<{ siteId
           ...(p.group ? { group: { id: p.group.id, name: p.group.name, images: p.group.images } } : {}),
         })),
         // A store shows its cart and account where the design puts them; the drawer explains itself.
-        ...(data.store
+        // Accounts can exist without a shop; a cart only ever with one.
+        ...(data.store || data.accounts
           ? {
               shop: {
+                cart: data.store,
+                accounts: data.store || data.accounts,
                 cartCount: 0,
                 signedIn: null,
-                drawer: <p className="zs-muted">Your customers&apos; cart opens here, with a button to check out.</p>,
+                drawer: data.store ? <p className="zs-muted">Your customers&apos; cart opens here, with a button to check out.</p> : undefined,
               },
             }
           : {}),
       }}
     />
+    </>
   );
 }

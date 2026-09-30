@@ -1,9 +1,9 @@
 import { commerceSafeBack, customerOrders } from "@zsite/platform";
-import { SiteShell } from "@zsite/runtime";
+import { AuthLayout, SiteShell, SystemFrame, commerceOf, greet } from "@zsite/runtime";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SHORT_STATUS } from "@/app/order/view";
-import { chromeContext, currentCustomer, isStore } from "@/lib/shop";
+import { chromeContext, currentCustomer, hasAccounts, isStore } from "@/lib/shop";
 import { currentSite } from "@/lib/site";
 import { signOutAction } from "./actions";
 import { PasswordForm, ProfileForm, SignInForm, SignUpForm } from "./forms";
@@ -14,46 +14,43 @@ const inr = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigi
 
 export default async function AccountPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
   const current = await currentSite();
-  if (!current || !isStore(current)) notFound();
+  if (!current || !hasAccounts(current)) notFound();
+  const pages = commerceOf(current.site.tree).pages;
+  const store = isStore(current);
   const next = commerceSafeBack((await searchParams).next ?? "/account");
   const [customer, ctx] = await Promise.all([currentCustomer(current), chromeContext(current)]);
 
   if (!customer) {
     return (
       <SiteShell tree={current.site.tree} ctx={ctx}>
-        <div className="zs-container zs-page">
-          <h1 style={{ fontSize: "clamp(1.8rem, 4vw, 2.4rem)" }}>Your account</h1>
-          <p className="zs-lede">Sign in to check out faster and follow your orders.</p>
-          <div className="zs-account" style={{ marginTop: 24 }}>
-            <section className="zs-card">
-              <h2 style={{ fontSize: "1.2rem" }}>Sign in</h2>
-              <SignInForm next={next} />
-            </section>
-            <section className="zs-card">
-              <h2 style={{ fontSize: "1.2rem" }}>New here? Create an account</h2>
-              <SignUpForm next={next} />
-            </section>
-          </div>
-        </div>
+        <SystemFrame pages={pages}>
+          <AuthLayout
+            pages={store || pages.auth.intro ? pages : { ...pages, auth: { ...pages.auth, intro: "Sign in to your account." } }}
+            signIn={<SignInForm next={next} />}
+            signUp={<SignUpForm next={next} />}
+          />
+        </SystemFrame>
       </SiteShell>
     );
   }
 
-  const orders = await customerOrders(current.resolved.tenantId, customer.id);
+  // Orders are a store's; any other site's account is the person's details.
+  const orders = store ? await customerOrders(current.resolved.tenantId, customer.id) : [];
   return (
     <SiteShell tree={current.site.tree} ctx={ctx}>
-      <div className="zs-container zs-page">
+      <SystemFrame pages={pages}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          <h1 style={{ fontSize: "clamp(1.8rem, 4vw, 2.4rem)", margin: 0 }}>Hi, {customer.name.split(" ")[0]}</h1>
+          <h1 style={{ fontSize: "clamp(1.8rem, 4vw, 2.4rem)", margin: 0 }}>{greet(pages.account.heading, customer.name.split(" ")[0]!, "Hi, {name}")}</h1>
           <form action={signOutAction}>
             <button type="submit" className="zs-btn zs-btn-ghost zs-btn-sm">Sign out</button>
           </form>
         </div>
+        {store && (
         <section className="zs-card" style={{ marginTop: 24 }}>
-          <h2 style={{ fontSize: "1.2rem" }}>Your orders</h2>
+          <h2 style={{ fontSize: "1.2rem" }}>{pages.account.ordersHeading ?? "Your orders"}</h2>
           {orders.length === 0 ? (
             <p className="zs-muted">
-              No orders yet. <a href="/">Start shopping</a>
+              {pages.account.emptyOrders ?? "No orders yet."} <a href="/">Start shopping</a>
             </p>
           ) : (
             <table className="zs-orders">
@@ -84,6 +81,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
             </table>
           )}
         </section>
+        )}
         <div className="zs-account" style={{ marginTop: 24 }}>
           <section className="zs-card">
             <h2 style={{ fontSize: "1.2rem" }}>Your details</h2>
@@ -95,7 +93,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
             <PasswordForm />
           </section>
         </div>
-      </div>
+      </SystemFrame>
     </SiteShell>
   );
 }

@@ -3,14 +3,16 @@ import { listIntegrations, withTenant } from "@zsite/platform";
 import Link from "next/link";
 import { Badge, Card, Icon, PageHeader, cx } from "@/components/ui";
 import { ago } from "@/lib/format";
+import { pageScope } from "@/lib/scope";
 import { requireSession } from "@/lib/session";
 
 export const metadata = { title: "Integrations" };
 
 const CATEGORY = { commerce: "Commerce", payments: "Payments", messaging: "Messaging", data: "Data sources" } as const;
 
-export default async function IntegrationsPage() {
+export default async function IntegrationsPage({ params }: { params: Promise<{ siteId?: string }> }) {
   const session = await requireSession();
+  const { siteId, base } = await pageScope(params);
   const integrations = await withTenant(session.tenant.id, listIntegrations);
   const byKind = new Map(integrations.map((i) => [i.kind, i]));
 
@@ -57,7 +59,7 @@ export default async function IntegrationsPage() {
                 return soon ? (
                   <div key={c.kind}>{body}</div>
                 ) : (
-                  <Link key={c.kind} href={`/integrations/${c.kind}`}>{body}</Link>
+                  <Link key={c.kind} href={`${base}/integrations/${c.kind}`}>{body}</Link>
                 );
               })}
             </div>

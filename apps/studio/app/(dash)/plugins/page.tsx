@@ -2,6 +2,7 @@ import { HOOKS, listPlugins, withTenant } from "@zsite/platform";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui";
 import { ago } from "@/lib/format";
+import { pageScope } from "@/lib/scope";
 import { requireSession } from "@/lib/session";
 import { createPluginAction, deletePluginAction, rotateSecretAction, updatePluginAction } from "./actions";
 
@@ -31,9 +32,10 @@ function HookBoxes({ selected }: { selected: string[] }) {
   );
 }
 
-export default async function PluginsPage() {
+export default async function PluginsPage({ params }: { params: Promise<{ siteId?: string }> }) {
   const session = await requireSession();
-  const plugins = await withTenant(session.tenant.id, (tx) => listPlugins(tx));
+  const { siteId, base } = await pageScope(params);
+  const plugins = await withTenant(session.tenant.id, (tx) => listPlugins(tx, siteId));
   const canManage = session.role !== "editor";
   return (
     <>

@@ -3,22 +3,24 @@ import Link from "next/link";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { Tabs } from "@/components/nav";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui";
+import { pageScope } from "@/lib/scope";
 import { requireSession } from "@/lib/session";
 import { createGroupAction } from "./actions";
 import { GroupFields } from "./fields";
 
 export const metadata = { title: "Variant groups" };
 
-export default async function GroupsPage() {
+export default async function GroupsPage({ params }: { params: Promise<{ siteId?: string }> }) {
   const session = await requireSession();
-  const groups = await withTenant(session.tenant.id, (tx) => listGroups(tx));
+  const { siteId, base } = await pageScope(params);
+  const groups = await withTenant(session.tenant.id, (tx) => listGroups(tx, siteId));
   return (
     <>
       <PageHeader
         title="Products"
         description="A variant group is one thing sold in several versions — a shirt in three colours, four sizes and two fits. Customers see it as one product and choose the combination."
       />
-      <Tabs tabs={[{ href: "/products", label: "Products", exact: true }, { href: "/products/groups", label: `Variant groups (${groups.length})` }]} />
+      <Tabs tabs={[{ href: `${base}/products`, label: "Products", exact: true }, { href: `${base}/products/groups`, label: `Variant groups (${groups.length})` }]} />
       <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
         <Card className="overflow-hidden">
           <CardHeader title="Groups" />
@@ -35,7 +37,7 @@ export default async function GroupsPage() {
                     <div className="h-10 w-10 rounded-md bg-slate-100" />
                   )}
                   <div className="min-w-0 flex-1">
-                    <Link href={`/products/groups/${g.id}`} className="font-medium text-slate-900 hover:underline">{g.name}</Link>
+                    <Link href={`${base}/products/groups/${g.id}`} className="font-medium text-slate-900 hover:underline">{g.name}</Link>
                     <p className="truncate text-xs text-slate-500">{g.options.map((o) => `${o.name} (${o.values.length})`).join(" × ") || "No options yet"}</p>
                   </div>
                   <Badge tone={g.variants ? "green" : "gray"}>{g.variants} variants</Badge>

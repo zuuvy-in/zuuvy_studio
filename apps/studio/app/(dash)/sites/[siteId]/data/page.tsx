@@ -28,8 +28,8 @@ export default async function FormsPage({ params }: { params: Promise<{ siteId: 
       <Card>
         <EmptyState
           icon="table"
-          title="No forms yet"
-          body="Ask the AI for one — “add a contact form”, “a booking form with date and party size” — and it makes the form and the table its answers go into."
+          title="No data yet"
+          body="Tables appear here when the AI makes a form for you. Ask for one — “add a contact form”, “a booking form with date and party size” — and it makes the form and the table its answers go into."
         />
       </Card>
     );
@@ -39,7 +39,7 @@ export default async function FormsPage({ params }: { params: Promise<{ siteId: 
       {tables.map((t) => {
         const pages = usedBy.get(t.key) ?? [];
         return (
-          <Link key={t.id} href={`/sites/${siteId}/forms/${t.id}`} className="flex items-center justify-between gap-4 px-5 py-4 hover:bg-slate-50">
+          <Link key={t.id} href={`/sites/${siteId}/data/${t.id}`} className="flex items-center justify-between gap-4 px-5 py-4 hover:bg-slate-50">
             <div className="min-w-0">
               <p className="flex items-center gap-2 font-medium text-slate-900">
                 {t.name} {!t.notify && <Badge>No emails</Badge>}

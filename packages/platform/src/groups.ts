@@ -19,11 +19,13 @@ export type ProductGroup = {
   images: string[];
   options: GroupOption[];
   active: boolean;
+  /** The store it belongs to; null = every store. */
+  site_id: string | null;
   created_at: Date;
   updated_at: Date;
 };
 
-const GROUP_COLUMNS = "id, name, description, category, images, options, active, created_at, updated_at";
+const GROUP_COLUMNS = "id, name, description, category, images, options, active, site_id, created_at, updated_at";
 const MAX_OPTIONS = 4;
 const MAX_VALUES = 30;
 const MAX_COMBINATIONS = 200;
@@ -103,11 +105,13 @@ function clean(input: GroupInput) {
   };
 }
 
-export async function listGroups(tx: Tx): Promise<(ProductGroup & { variants: number })[]> {
+export async function listGroups(tx: Tx, siteId?: string): Promise<(ProductGroup & { variants: number })[]> {
   return tx.query(
     `select ${GROUP_COLUMNS.split(", ").map((c) => `g.${c}`).join(", ")}, count(p.id)::int as variants
        from product_groups g left join products p on p.group_id = g.id
+      ${siteId ? "where g.site_id is null or g.site_id = $1" : ""}
       group by g.id order by g.name`,
+    siteId ? [siteId] : [],
   );
 }
 
@@ -118,12 +122,12 @@ export async function getGroup(tx: Tx, id: string): Promise<ProductGroup & { var
   return { ...group, variants };
 }
 
-export async function createGroup(tx: Tx, input: GroupInput): Promise<ProductGroup> {
+export async function createGroup(tx: Tx, input: GroupInput & { siteId?: string | null }): Promise<ProductGroup> {
   const g = clean(input);
   return tx.get<ProductGroup>(
-    `insert into product_groups (tenant_id, name, description, category, images, options, active)
-     values (app_tenant(), $1, $2, $3, $4, $5, $6) returning ${GROUP_COLUMNS}`,
-    [g.name, g.description, g.category, JSON.stringify(g.images), JSON.stringify(g.options), g.active],
+    `insert into product_groups (tenant_id, name, description, category, images, options, active, site_id)
+     values (app_tenant(), $1, $2, $3, $4, $5, $6, $7) returning ${GROUP_COLUMNS}`,
+    [g.name, g.description, g.category, JSON.stringify(g.images), JSON.stringify(g.options), g.active, input.siteId ?? null],
   );
 }
 
@@ -171,8 +175,8 @@ export async function generateVariants(
     if (have.has(comboKey(group.options, combo))) continue;
     const stock = base.stock ?? null;
     await tx.query(
-      `insert into products (tenant_id, source, name, description, category, price, mrp, images, in_stock, stock, active, group_id, options)
-       values (app_tenant(), 'native', $1, '', $2, $3, $4, '[]', $5, $6, true, $7, $8)`,
+      `insert into products (tenant_id, source, name, description, category, price, mrp, images, in_stock, stock, active, group_id, options, site_id)
+       values (app_tenant(), 'native', $1, '', $2, $3, $4, '[]', $5, $6, true, $7, $8, $9)`,
       [
         `${group.name} — ${variantLabel(group.options, combo)}`,
         group.category,
@@ -182,6 +186,7 @@ export async function generateVariants(
         stock,
         groupId,
         JSON.stringify(combo),
+        group.site_id,
       ],
     );
     created++;

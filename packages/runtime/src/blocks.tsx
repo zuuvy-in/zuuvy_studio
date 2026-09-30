@@ -889,6 +889,7 @@ export function blockSwitch(section: AnySection, ctx: RenderContext) {
     <div
       key={section.id}
       className="zs-block"
+      data-section={section.id}
       data-type={section.type}
       data-bg={st.background && st.background !== "default" ? st.background : undefined}
       data-pattern={st.pattern && st.pattern !== "none" ? st.pattern : undefined}

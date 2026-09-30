@@ -4,6 +4,7 @@ import { type ProductInput, UserError, addToGroup, createGroup, createProduct, u
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { type ActionState, attempt } from "@/lib/actions";
+import { formScope, ownSiteId } from "@/lib/scope";
 import { requireSession } from "@/lib/session";
 
 const text = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
@@ -32,18 +33,20 @@ async function input(form: FormData, tenantId: string, userId: string): Promise<
 
 export async function saveProductAction(_: ActionState, form: FormData): Promise<ActionState> {
   const session = await requireSession();
+  const scope = formScope(form);
   return attempt(async () => {
     const id = text(form, "id");
     const data = await input(form, session.tenant.id, session.user.id);
-    await withTenant(session.tenant.id, (tx) => (id ? updateProduct(tx, id, data) : createProduct(tx, data)));
-    revalidatePath("/products");
-    redirect("/products");
+    await withTenant(session.tenant.id, async (tx) => (id ? updateProduct(tx, id, data) : createProduct(tx, { ...data, siteId: await ownSiteId(tx, scope) })));
+    revalidatePath(`${scope.base}/products`);
+    redirect(`${scope.base}/products`);
   });
 }
 
 /** Put the ticked products into a variant group — an existing one, or a new one named here. */
 export async function groupSelectedAction(_: ActionState, form: FormData): Promise<ActionState> {
   const session = await requireSession();
+  const scope = formScope(form);
   return attempt(async () => {
     const ids = form.getAll("ids").map(String);
     if (!ids.length) throw new UserError("Tick the products that are variants of one thing.");
@@ -52,12 +55,12 @@ export async function groupSelectedAction(_: ActionState, form: FormData): Promi
       if (!id) {
         const name = text(form, "groupName");
         if (!name) throw new UserError("Choose a group, or name a new one.");
-        id = (await createGroup(tx, { name, options: [] })).id;
+        id = (await createGroup(tx, { name, options: [], siteId: await ownSiteId(tx, scope) })).id;
       }
       await addToGroup(tx, id, ids);
       return id;
     });
-    revalidatePath("/products");
-    redirect(`/products/groups/${groupId}`);
+    revalidatePath(`${scope.base}/products`);
+    redirect(`${scope.base}/products/groups/${groupId}`);
   });
 }
