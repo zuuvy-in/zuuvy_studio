@@ -45,11 +45,41 @@ async function photosFor(design: ShowcaseDesign, search: PhotoSearch | null): Pr
   return (slot) => found.get(slot);
 }
 
+/** For a deploy: is this design missing, or a photo-less seed nobody has touched since? */
+async function wanted(tenantId: string, subdomain: string, canFetchPhotos: boolean): Promise<boolean> {
+  return withTenant(tenantId, async (tx) => {
+    const site = await tx.one<{ cover: string | null; offered: boolean; untouched: boolean }>(
+      `select c.cover_url as cover, c.id is not null as offered,
+              coalesce(s.published_version_id = v.id and v.summary like 'Premade design%', false) as untouched
+         from sites s
+         left join showcases c on c.site_id = s.id
+         left join lateral (select id, summary from site_versions where site_id = s.id order by number desc limit 1) v on true
+        where s.subdomain = $1`,
+      [subdomain],
+    );
+    if (!site) return true;
+    return canFetchPhotos && site.offered && !site.cover && site.untouched;
+  });
+}
+
 export type SeedReport = { slug: string; siteId: string; version: number; photos: number; created: boolean }[];
 
 export async function seedShowcases(
   adminEmail: string,
-  opts: { search?: PhotoSearch | null; only?: string[]; log?: (line: string) => void } = {},
+  opts: {
+    search?: PhotoSearch | null;
+    only?: string[];
+    log?: (line: string) => void;
+    /**
+     * "all" (the script's default) republishes every design. "missing" (what a
+     * deploy runs) adds designs that are not on the account yet and leaves the
+     * rest alone — so an admin's edits, or a showcase they stopped offering,
+     * survive every deploy. The one exception: a design the seed itself put up
+     * without photos (no library key then), still untouched, gets them once a
+     * key is there.
+     */
+    mode?: "all" | "missing";
+  } = {},
 ): Promise<SeedReport> {
   const who = await withGlobal((tx) =>
     tx.one<{ user_id: string; tenant_id: string }>(
@@ -62,6 +92,7 @@ export async function seedShowcases(
   const report: SeedReport = [];
   const designs = SHOWCASE.filter((d) => !opts.only?.length || opts.only.includes(d.slug));
   for (const [i, design] of designs.entries()) {
+    if (opts.mode === "missing" && !(await wanted(who.tenant_id, `tpl-${design.slug}`, Boolean(opts.search)))) continue;
     const photo = await photosFor(design, opts.search ?? null);
     const tree = design.build(photo);
     const subdomain = `tpl-${design.slug}`;
@@ -70,7 +101,7 @@ export async function seedShowcases(
       let siteId: string;
       let version: number;
       if (existing) {
-        const v = await createVersion(tx, existing.id, { tree, data: {}, parentId: existing.published_version_id, source: "manual", summary: "Premade design updated", userId: who.user_id });
+        const v = await createVersion(tx, existing.id, { tree, data: {}, parentId: existing.published_version_id, source: "manual", summary: `Premade design updated: ${design.name}`, userId: who.user_id });
         await publishVersion(tx, existing.id, v.id, who.user_id);
         siteId = existing.id;
         version = v.number;

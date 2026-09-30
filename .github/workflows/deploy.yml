@@ -88,6 +88,8 @@ jobs:
       ZSITE_MCP_SERVERS: ${{ secrets.ZSITE_MCP_SERVERS }}
       ZSITE_IMAGE_GENERATION: ${{ vars.ZSITE_IMAGE_GENERATION }}
       ZSITE_IMPORT_HOSTS: ${{ vars.ZSITE_IMPORT_HOSTS }}
+      # The migration task seeds premade sites that are not on the admin account yet; "0" turns it off.
+      SHOWCASE_SEED: ${{ vars.SHOWCASE_SEED }}
       DB_MIN_ACU: ${{ vars.DB_MIN_ACU }}
       DB_ENGINE_VERSION: ${{ vars.DB_ENGINE_VERSION }}
       # "true" once SES has the domain's DKIM records and production access.

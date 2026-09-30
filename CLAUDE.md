@@ -14,7 +14,8 @@ npm test             # vitest; platform tests create a throwaway DB per file on 
 npm run typecheck
 npm run admin:create   # platform superadmin (rishav@zuuvy.in by default)
 npm run db:seed:shop   # local: variants, discounts and a cart drawer on the demo store
-npm run db:seed:showcase  # the ten premade sites on the admin's account (SHOWCASE_EMAIL / SUPERADMIN_EMAIL)
+npm run db:seed:showcase  # republish the ten premade sites on the admin's account (SHOWCASE_EMAIL / SUPERADMIN_EMAIL);
+                          # every deploy already adds missing ones (scripts/deploy-migrate.ts, SHOWCASE_SEED=0 turns it off)
 ```
 
 ## Things that will bite you

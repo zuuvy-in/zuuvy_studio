@@ -137,6 +137,9 @@ export class BaseStack extends Stack {
         DB_NAME,
         DB_SSL: "1",
         DB_ADMIN_USER,
+        // The premade sites are seeded here too (only missing ones); photos need the library key.
+        ...(cfg.unsplashKey ? { UNSPLASH_ACCESS_KEY: cfg.unsplashKey } : {}),
+        ...(cfg.showcaseSeed ? { SHOWCASE_SEED: cfg.showcaseSeed } : {}),
       },
       secrets: {
         DB_ADMIN_PASSWORD: ecs.Secret.fromSecretsManager(this.db.secret!, "password"),

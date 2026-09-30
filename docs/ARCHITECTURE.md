@@ -414,8 +414,13 @@ version.
 ## Premade sites
 
 Ten designs (`core/src/showcase.ts`) are seeded as real, published sites on the
-platform admin's account by `npm run db:seed:showcase` (idempotent; photos from
-Unsplash by what each slot should show, placeholders without a key) and offered
+platform admin's account — by every deploy's migration task, after the
+superadmin exists, adding only designs not there yet (`mode: "missing"`, so an
+admin's edits and a showcase they stopped offering survive; a photo-less seed
+nobody has touched gets its photos once `UNSPLASH_ACCESS_KEY` is set;
+`SHOWCASE_SEED=0` turns it off) — and on demand by `npm run db:seed:showcase`,
+which republishes them all. Photos come from Unsplash by what each slot should
+show, placeholders without a key. They are offered
 as **showcases** (`showcases` table, migration 0008). Customers see them on
 Create a site, preview the live site, and fork one: `forkShowcase` copies the
 published version, brand kit, form tables and — for a store, if asked — the
