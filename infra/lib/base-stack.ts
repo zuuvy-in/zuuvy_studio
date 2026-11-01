@@ -83,6 +83,9 @@ export class BaseStack extends Stack {
       writer: rds.ClusterInstance.serverlessV2("writer"),
       serverlessV2MinCapacity: cfg.dbMinAcu,
       serverlessV2MaxCapacity: cfg.dbMaxAcu,
+      // Only meaningful at DB_MIN_ACU=0: pause after the shortest idle Aurora allows.
+      // Any open connection holds it awake, which is why the worker backs off (see ServicesStack).
+      ...(cfg.dbMinAcu === 0 ? { serverlessV2AutoPauseDuration: Duration.minutes(5) } : {}),
       vpc: this.vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       securityGroups: [dbSg],
@@ -117,7 +120,12 @@ export class BaseStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
-    this.cluster = new ecs.Cluster(this, "Cluster", { vpc: this.vpc, clusterName: "zsite" });
+    this.cluster = new ecs.Cluster(this, "Cluster", {
+      vpc: this.vpc,
+      clusterName: "zsite",
+      // FARGATE_SPOT for the worker: ~70% cheaper, and an interrupted job is just retried from the outbox.
+      enableFargateCapacityProviders: true,
+    });
 
     this.toolsImage = ecs.ContainerImage.fromAsset(REPO_ROOT, {
       file: "infra/docker/tools.Dockerfile",

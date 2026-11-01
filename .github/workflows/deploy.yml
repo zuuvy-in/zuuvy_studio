@@ -91,6 +91,8 @@ jobs:
       # The migration task seeds premade sites that are not on the admin account yet; "0" turns it off.
       SHOWCASE_SEED: ${{ vars.SHOWCASE_SEED }}
       DB_MIN_ACU: ${{ vars.DB_MIN_ACU }}
+      RENDERER_MIN: ${{ vars.RENDERER_MIN }}
+      RENDERER_MAX: ${{ vars.RENDERER_MAX }}
       DB_ENGINE_VERSION: ${{ vars.DB_ENGINE_VERSION }}
       # "true" once SES has the domain's DKIM records and production access.
       EMAIL_ENABLED: ${{ vars.EMAIL_ENABLED }}
