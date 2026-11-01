@@ -1,6 +1,8 @@
 /**
- * Drains the outbox: sends orders to Zuuvy, runs catalogue syncs. In
- * production this is a container fed by SQS; locally it polls every 2s.
+ * Drains the outbox: sends orders to Zuuvy, runs catalogue syncs. Polls every
+ * 2s. With WORKER_IDLE_POLL_MAX_MS set, the gap doubles while there is nothing
+ * to do, up to that ceiling, and drops back to 2s as soon as a job runs — so
+ * the database can go idle long enough for Aurora to pause.
  */
 import { HANDLERS, closePool, drainOutbox, loadRootEnv } from "@zsite/platform";
 
@@ -12,14 +14,18 @@ const stop = () => {
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
 
-console.log("worker: draining the outbox every 2s");
+const BASE_MS = 2000;
+const maxIdleMs = Math.max(BASE_MS, Number(process.env.WORKER_IDLE_POLL_MAX_MS || BASE_MS));
+console.log(`worker: draining the outbox every ${BASE_MS / 1000}s` + (maxIdleMs > BASE_MS ? `, backing off to ${maxIdleMs / 1000}s when idle` : ""));
 let lastError = "";
+let waitMs = BASE_MS;
 while (!stopping) {
   try {
     const r = await drainOutbox(HANDLERS);
     if (lastError) console.log("worker: database reachable again");
     lastError = "";
     if (r.ran || r.failed || r.dead) console.log(`worker: ran ${r.ran}, retrying ${r.failed}, dead ${r.dead}`);
+    waitMs = r.ran || r.failed ? BASE_MS : Math.min(waitMs * 2, maxIdleMs);
   } catch (e) {
     const err = e as Error & { code?: string };
     // Say it once, not every two seconds.
@@ -30,6 +36,7 @@ while (!stopping) {
     }
     lastError = err.message;
   }
-  await new Promise((r) => setTimeout(r, 2000));
+  // Sleep in short slices so SIGTERM (a Spot interruption, a deploy) still stops promptly.
+  for (let slept = 0; slept < waitMs && !stopping; slept += BASE_MS) await new Promise((r) => setTimeout(r, BASE_MS));
 }
 await closePool();

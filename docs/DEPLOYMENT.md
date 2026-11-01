@@ -10,12 +10,19 @@ first run builds everything from nothing.
 | Stack | Resources |
 |---|---|
 | `ZsiteBase` | Media bucket (pictures; `t/*` public-read, retained), SES domain identity for `zuuvy.site` (DKIM, MAIL FROM `mail.zuuvy.site`), VPC (2 AZs, no NAT), Aurora PostgreSQL 16 Serverless v2 (encrypted, TLS enforced, 7-day backups, deletion protection), Secrets Manager secrets (admin and app database passwords, the credential-sealing key — names generated, find them by the stack's Resources tab), ECS cluster, migration task |
-| `ZsiteServices` | Application Load Balancer, ACM wildcard certificate for `zuuvy.site` + `*.zuuvy.site`, Route 53 records (apex, `*`, `studio`), Fargate services: studio ×1, renderer ×2–6 (CPU autoscaling), worker ×1, CloudWatch log groups, IAM access to Amazon Bedrock |
+| `ZsiteServices` | Application Load Balancer, ACM wildcard certificate for `zuuvy.site` + `*.zuuvy.site`, Route 53 records (apex, `*`, `studio`), Fargate services: studio ×1, renderer ×1–3 (CPU autoscaling), worker ×1 on Fargate Spot, CloudWatch log groups, IAM access to Amazon Bedrock |
 
-Rough running cost at the defaults: about $150–200/month (Aurora at 0.5 ACU,
-four small Fargate tasks, the load balancer, public IPv4 addresses), plus
-Bedrock usage — all AWS services, so startup credits apply. Set `DB_MIN_ACU=0`
-to let the database pause when idle.
+Rough running cost at the defaults: about $120–140/month (Aurora at 0.5 ACU
+≈ $50, three small Fargate tasks with the worker on Spot ≈ $45, the load
+balancer ≈ $18, public IPv4 addresses ≈ $18), plus Bedrock usage — all AWS
+services, so startup credits apply.
+
+The one large lever left is `DB_MIN_ACU=0` (≈ $45/month less while idle). It
+lets Aurora pause after 5 idle minutes, and the worker then backs off to
+polling every 6 minutes while there is nothing to do, since any open
+connection keeps the database awake. The price: the first request after a
+pause — a storefront visitor's, too — waits ~15s, and a job queued in a quiet
+spell (an order to Zuuvy, an email) can wait up to 6 minutes.
 
 ## GitHub: what to store
 
@@ -47,7 +54,8 @@ Optionally add required reviewers to approve each deploy. Then add these
 | `ZSITE_IMAGE_MODEL` | *(optional)* `global.amazon.nova-2-omni-v1:0` | Bedrock image model for AI pictures (Nova Canvas is Legacy) |
 | `ZSITE_IMAGE_REGION` | *(optional)* `ap-south-1` | Region the image model is called from; empty = the stack's |
 | `EMAIL_ENABLED` | *(optional)* `true` | Send email through SES. Leave unset until the DKIM records are in and SES production access is granted — see "Email" |
-| `DB_MIN_ACU` | *(optional)* `0.5` | Aurora minimum capacity; `0` pauses when idle |
+| `DB_MIN_ACU` | *(optional)* `0.5` | Aurora minimum capacity; `0` pauses when idle and slows the worker's idle polling (see the cost note above) |
+| `RENDERER_MIN` / `RENDERER_MAX` | *(optional)* `1` / `3` | Renderer task floor and ceiling; `RENDERER_MIN=2` keeps a spare so one task dying is not a minute of 503s |
 | `DB_ENGINE_VERSION` | *(optional)* `16.11` | Aurora PostgreSQL version. AWS retires old minor versions; list what the region offers with `aws rds describe-db-engine-versions --engine aurora-postgresql --region ap-south-1 --query "DBEngineVersions[].EngineVersion"` |
 
 If you later switch AI editing to Claude, put `ANTHROPIC_API_KEY` in AWS

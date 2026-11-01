@@ -186,7 +186,17 @@ export class ServicesStack extends Stack {
     const service = (
       name: string,
       image: ecs.ContainerImage,
-      opts: { cpu: number; memory: number; count: number; port?: number; command?: string[]; bedrock?: boolean; policies?: iam.PolicyStatement[] },
+      opts: {
+        cpu: number;
+        memory: number;
+        count: number;
+        port?: number;
+        command?: string[];
+        bedrock?: boolean;
+        policies?: iam.PolicyStatement[];
+        spot?: boolean;
+        environment?: Record<string, string>;
+      },
     ) => {
       const task = new ecs.FargateTaskDefinition(this, `${name}Task`, { cpu: opts.cpu, memoryLimitMiB: opts.memory });
       if (opts.bedrock) {
@@ -198,7 +208,7 @@ export class ServicesStack extends Stack {
       task.addContainer(name, {
         image,
         command: opts.command,
-        environment: env,
+        environment: { ...env, ...opts.environment },
         secrets,
         portMappings: opts.port ? [{ containerPort: opts.port }] : [],
         logging: ecs.LogDrivers.awsLogs({
@@ -210,6 +220,7 @@ export class ServicesStack extends Stack {
         cluster: base.cluster,
         taskDefinition: task,
         desiredCount: opts.count,
+        ...(opts.spot ? { capacityProviderStrategies: [{ capacityProvider: "FARGATE_SPOT", weight: 1 }] } : {}),
         assignPublicIp: true,
         vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
         securityGroups: [taskSg],
@@ -227,7 +238,7 @@ export class ServicesStack extends Stack {
     });
 
     const studio = service("Studio", nextImage("studio"), { cpu: 512, memory: 1024, count: 1, port: 3000, bedrock: true, policies: [assetsRw, sendEmail] });
-    const renderer = service("Renderer", nextImage("renderer"), { cpu: 512, memory: 1024, count: 2, port: 3000 });
+    const renderer = service("Renderer", nextImage("renderer"), { cpu: 512, memory: 1024, count: cfg.rendererMin, port: 3000 });
     const worker = service("Worker", base.toolsImage, {
       cpu: 256,
       memory: 512,
@@ -235,6 +246,12 @@ export class ServicesStack extends Stack {
       command: ["npx", "tsx", "scripts/worker.ts"],
       bedrock: true,
       policies: [assetsRw, sendEmail, domainCerts],
+      // Nothing waits on it synchronously and the outbox survives an interruption.
+      spot: true,
+      // A worker polling every 2s keeps Aurora from ever pausing. When it may pause,
+      // back off while idle to longer than the auto-pause window (5 min); a job
+      // queued in a quiet spell then waits up to that long.
+      ...(cfg.dbMinAcu === 0 ? { environment: { WORKER_IDLE_POLL_MAX_MS: String(6 * 60_000) } } : {}),
     });
 
     const healthCheck: elbv2.HealthCheck = { path: "/api/health", healthyHttpCodes: "200", interval: Duration.seconds(20) };
@@ -307,7 +324,7 @@ export class ServicesStack extends Stack {
       alb.addListener("Storefront", { port: 8080, protocol: elbv2.ApplicationProtocol.HTTP, defaultAction: elbv2.ListenerAction.forward([rendererTg]) });
     }
 
-    const scaling = renderer.autoScaleTaskCount({ minCapacity: 2, maxCapacity: 6 });
+    const scaling = renderer.autoScaleTaskCount({ minCapacity: cfg.rendererMin, maxCapacity: cfg.rendererMax });
     scaling.scaleOnCpuUtilization("Cpu", { targetUtilizationPercent: 60 });
 
     new CfnOutput(this, "StudioUrl", { value: studioUrl });
